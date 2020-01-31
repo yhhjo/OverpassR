@@ -12,6 +12,8 @@ knitr::opts_chunk$set(echo = TRUE)
 library(tidyverse)
 library(sf)
 library(mapview)
+library(leaflet)
+library(shiny)
 ```
 
 ## R Markdown
@@ -22,20 +24,30 @@ This is a playground for Andrew to mess around with data and learn R and the tid
 ```{r cars}
 wrs <- st_read('data/in/wrs2_asc_desc.shp')
 
-wrs %>% 
-  sample_frac(.2) %>%
-  mapview(., zcol = 'PATH')
+map <- (wrs %>% sample_frac(.1) %>% mapview(., zcol = 'PATH'))
+wrs1 <- sample_frac(wrs, .1)
+
+wrs1 %>% mapview(., zcol = 'PATH')
 
 ```
 
+```{r functions}
+pal <- colorNumeric(palette = "Blues", 
+                    domain = wrs1$PATH)
+map <- leaflet(wrs1) %>%addTiles()
+map %>%
+  addPolygons(color = pal(wrs1$PATH))
+```
 ## Including Plots
 
 You can also embed plots, for example:
 
 ```{r pressure, echo=FALSE}
 
+```
 
 
+```{r pressure, echo=FALSE}
 ```
 
 Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
