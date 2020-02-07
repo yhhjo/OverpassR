@@ -29,12 +29,14 @@ wrs1 <- sample_frac(wrs, .1)
 
 wrs1 %>% mapview(., zcol = 'PATH')
 
+
 ```
 
 ```{r functions}
 pal <- colorNumeric(palette = "Blues", 
                     domain = wrs1$PATH)
 map <- leaflet(wrs1) %>%addTiles()
+
 map %>%
   addPolygons(color = pal(wrs1$PATH))
 ```
