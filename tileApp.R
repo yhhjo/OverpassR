@@ -16,7 +16,7 @@ library(rgdal)
   
   test <- leaflet(wrs) %>% 
     addTiles() %>% 
-    addPolygons(stroke = TRUE, color = ~pal(PATH), layerId = ~PR)
+    addPolygons(stroke = TRUE, color = ~pal(PATH), layerId = ~PR )
   
   
   
