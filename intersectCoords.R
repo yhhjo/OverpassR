@@ -5,20 +5,16 @@ library(tidyverse)
 library(RColorBrewer)
 library(sp)
 library(rgdal)
+library(lubridate)
 
 #Read the wrs tiles 
 wrs <- 
   st_read('data/in/wrs2_asc_desc.shp')%>%
   sample_frac(.05)
 
+lookup_table <- read.delim('data/in/lookup_table.txt')
 
 pal <- colorNumeric(palette = "Blues", domain = wrs$PATH )
-
-test <- leaflet(wrs) %>% 
-  addTiles() %>% 
-  addPolygons(stroke = TRUE, color = ~pal(PATH), layerId = ~PR )
-
-
 
 
 ui <- fluidPage(
@@ -26,6 +22,11 @@ ui <- fluidPage(
   titlePanel("World Reference System Satellite Tiles"),
   leafletOutput('map'),
   actionButton("button", "Refresh Map"),
+  fluidRow(
+    column(12,
+           tableOutput('table')
+    )
+  )
   
 )
 
@@ -73,7 +74,21 @@ server <- function(input, output){
       #And select those polygons
       mat <- st_intersects(wrs, pnt, sparse = FALSE)
       overlappingTiles <- (wrs[mat,])
+      paths <-  overlappingTiles$PATH
       
+      #Rows of the lookup table from the intersected tile; pull the "Overpass" column (earlier known date of satellite overpass)
+      known_passes <- lookup_table[paths,]$Overpass
+      
+      days_til <- (as.numeric(Sys.Date()) - known_passes) %% 16
+      next_pass <- (Sys.Date() + days_til) %>% as.character.Date()
+
+      #Generate an output of the next pass and PR id of the tile (in case multiple tiles selected)
+      output_table <- cbind(pr, next_pass) 
+
+      
+      output$table <- renderTable(output_table)
+      
+
       #Update the map: clear all tiles, then add only the ones that overlap in Red
       leafletProxy("map")%>%
         clearShapes()%>%
@@ -89,7 +104,7 @@ server <- function(input, output){
   observe( {
     
     proxyMap <- leafletProxy("map")
-    
+
     if(input$button){
       proxyMap%>%
         clearShapes()%>%
@@ -98,6 +113,8 @@ server <- function(input, output){
         addPolygons(data = wrs, color = ~pal(PATH), layerId = ~PR, 
                     highlightOptions = highlightOptions(color ='Red',
                                                         opacity = 0.7))
+      
+      output$table <- renderTable(NULL)
       
     }
     
