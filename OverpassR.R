@@ -9,6 +9,7 @@ library(lubridate)
 
 #Read the wrs tiles 
 wrs <- st_read('data/in/wrs2_asc_desc.shp')
+wrs <- wrs[wrs$MODE == 'D',]
 
 lookup_table <- read.delim('data/in/lookup_table.txt')
 
@@ -101,11 +102,11 @@ server <- function(input, output){
         
         for (r in len){
           x <- seq.Date(next_pass[r], to = end_date, by = 16) %>% as.character.Date()
-          updating_table <- rbind(updating_table, x)
+          updating_table <- cbind(updating_table, x)
           
         }
         
-        output_table <- cbind(tile_ID, overlapping_rows, overlapping_paths, updating_table)
+        output_table <- rbind(tile_ID, overlapping_rows, overlapping_paths, updating_table)
         
         
         
@@ -118,7 +119,7 @@ server <- function(input, output){
         next_pass <- (Sys.Date() + days_til) %>% as.character.Date()
         
         #Bug still exists that allows user to click around (intended) to see new tiles, but won't add those tiles to the output table
-        output_table <- cbind(tile_ID, overlapping_rows, overlapping_paths, next_pass)
+        output_table <- rbind(tile_ID, overlapping_rows, overlapping_paths, next_pass)
         
         
       }

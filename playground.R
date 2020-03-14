@@ -6,16 +6,16 @@ library(RColorBrewer)
 library(sp)
 library(rgdal)
 library(lubridate)
-
+library(DT)
 #Read the wrs tiles 
 wrs <- st_read('data/in/wrs2_asc_desc.shp')
+wrs <- wrs[wrs$MODE == 'D',]
 
 lookup_table <- read.delim('data/in/lookup_table.txt')
-
-pal <- colorNumeric(palette = "Blues", domain = wrs$PATH )
-
 global <- reactiveValues(min_date = Sys.Date(), max_date = Sys.Date() + 16)
 
+#Global variable output table. It will update with each map click and reset only when 'reset map' button is clicked
+global_table = data.frame("tile_ID" = numeric(), "overlapping_rows" = numeric(), "overlapping_paths" = numeric(), "next_pass" = character()) %>% t()
 
 
 ui <- fluidPage(
@@ -27,7 +27,7 @@ ui <- fluidPage(
    
    fluidRow(
       column(12,
-             tableOutput('table'),
+             DTOutput('table'),
       ),
       
       column(12, offset = 8,
@@ -38,7 +38,7 @@ ui <- fluidPage(
       
       column(12, offset = 8, 
              actionButton('applyDates', "Apply Date Filter"),
-             ),
+      ),
    )
    
 )
@@ -50,18 +50,20 @@ server <- function(input, output){
    
    output$map <- renderLeaflet({
       leaflet() %>% addProviderTiles(providers$Esri.WorldImagery) %>% addProviderTiles(providers$CartoDB.VoyagerOnlyLabels) %>% setView(lat=10, lng=0, zoom=2)
-
+      
       
    })
    
-
+   
+   proxy_table = dataTableProxy('table')
+  
    
    observeEvent(input$map_click,{
       
       click <- input$map_click
       lat <- click$lat
       lon <- click$lng
-
+      
       if(is.null(click)) 
          return() 
       
@@ -101,31 +103,39 @@ server <- function(input, output){
             
             for (r in len){
                x <- seq.Date(next_pass[r], to = end_date, by = 16) %>% as.character.Date()
-               updating_table <- rbind(updating_table, x)
+               updating_table <- cbind(updating_table, x)
                
             }
             
-            output_table <- cbind(tile_ID, overlapping_rows, overlapping_paths, updating_table)
+            #If global table isn't empty, update it with the new click and unique values
+            if(!ncol(global_table) == 0)
+               global_table <<- cbind( (rbind(tile_ID, overlapping_rows, overlapping_paths, updating_table)), global_table)
             
             
-
+            else
+               global_table <<-  data.frame("tile_ID" = tile_ID, "overlapping_rows" = overlapping_rows, "overlapping_paths" = overlapping_paths, "next_pass" = updating_table) %>% t()
+            
+            
          }
-      
+         
          
          else{
             
             days_til <- (as.numeric(Sys.Date()) - known_pass) %% 16
             next_pass <- (Sys.Date() + days_til) %>% as.character.Date()
             
-            #Bug still exists that allows user to click around (intended) to see new tiles, but won't add those tiles to the output table
-            output_table <- cbind(tile_ID, overlapping_rows, overlapping_paths, next_pass)
+            #Update the global table with each repeated, distinct click
+            if(!ncol(global_table) == 0)
+               global_table <<- cbind( rbind(tile_ID, overlapping_rows, overlapping_paths, next_pass), global_table)
             
-         
+            else
+               global_table <<-  data.frame("tile_ID" = tile_ID, "overlapping_rows" = overlapping_rows, "overlapping_paths" = overlapping_paths, "next_pass" = next_pass) %>% t()
+            
+            
          }
          
-         
          #Generate and display output table
-         output$table <- renderTable(output_table)
+         output$table <<- renderDT(global_table)
          
          
          #Update the map: clear all tiles, then add only the ones that overlap in Red
@@ -151,8 +161,9 @@ server <- function(input, output){
             addProviderTiles(providers$Esri.WorldImagery) %>%
             addProviderTiles(providers$CartoDB.VoyagerOnlyLabels) %>% 
             setView(lat=10, lng=0, zoom=2)
-
-         output$table <- renderTable(NULL)
+         
+         output$table <- renderDT(NULL)
+         global_table <<- data.frame()
          
       }
       
