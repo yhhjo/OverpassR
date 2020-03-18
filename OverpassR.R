@@ -6,17 +6,18 @@ library(RColorBrewer)
 library(sp)
 library(rgdal)
 library(lubridate)
-
+library(DT)
+library(dplyr)
+library(plyr)
 #Read the wrs tiles 
 wrs <- st_read('data/in/wrs2_asc_desc.shp')
 wrs <- wrs[wrs$MODE == 'D',]
 
 lookup_table <- read.delim('data/in/lookup_table.txt')
-
-pal <- colorNumeric(palette = "Blues", domain = wrs$PATH )
-
 global <- reactiveValues(min_date = Sys.Date(), max_date = Sys.Date() + 16)
 
+#Global variable output table. It will update with each map click and reset only when 'reset map' button is clicked
+global_table = data.frame("tile_ID" = numeric(), "overlapping_rows" = numeric(), "overlapping_paths" = numeric(), "next_pass" = character()) %>% t() %>% as.data.frame()
 
 
 ui <- fluidPage(
@@ -28,7 +29,7 @@ ui <- fluidPage(
   
   fluidRow(
     column(12,
-           tableOutput('table'),
+           DTOutput('table' ),
     ),
     
     column(12, offset = 8,
@@ -55,6 +56,8 @@ server <- function(input, output){
     
   })
   
+  
+  proxy_table = dataTableProxy('table')
   
   
   observeEvent(input$map_click,{
@@ -101,13 +104,24 @@ server <- function(input, output){
         updating_table <- NULL
         
         for (r in len){
-          x <- seq.Date(next_pass[r], to = end_date, by = 16) %>% as.character.Date()
-          updating_table <- cbind(updating_table, x)
-          
+          x <- seq.Date(next_pass[r], to = end_date, by = 16) %>% as.data.frame.character()
+          updating_table <- cbind.pad(updating_table, x)
         }
         
-        output_table <- rbind(tile_ID, overlapping_rows, overlapping_paths, updating_table)
+        updating_table <- updating_table %>% t() %>% t()
+        appending_table <- rbind("tile_ID" = tile_ID, "overlapping rows" = overlapping_rows, "overlapping paths" = overlapping_paths, "next pass" = updating_table) %>% as.data.frame()
+        appending_table <- `colnames<-`(appending_table, 'Tile')
+        #If global table isn't empty, update it with the new click and unique values
         
+        if(!ncol(global_table) == 0){
+          global_table <<- cbind.pad(appending_table, global_table) %>% as.data.frame()
+        }
+        
+        
+        else{
+          global_table <<- appending_table
+          
+        }
         
         
       }
@@ -118,15 +132,22 @@ server <- function(input, output){
         days_til <- (as.numeric(Sys.Date()) - known_pass) %% 16
         next_pass <- (Sys.Date() + days_til) %>% as.character.Date()
         
-        #Bug still exists that allows user to click around (intended) to see new tiles, but won't add those tiles to the output table
-        output_table <- rbind(tile_ID, overlapping_rows, overlapping_paths, next_pass)
+        #Table with all of the data from the map click
+        appending_table <- rbind("tile_ID" = tile_ID, "overlapping_rows" = overlapping_rows, "overlapping_paths" = overlapping_paths, "next_pass" = next_pass) %>% as.data.frame()
+        appending_table <- `colnames<-`(appending_table, "Tile")
         
+        #If global table isn't populated yet, update it with appending-table. Otherwise, append the new values to the global table
+        if(!ncol(global_table) == 0)
+          global_table <<- cbind.pad(appending_table, global_table)
+        
+        
+        else
+          global_table <<- appending_table
         
       }
       
-      
       #Generate and display output table
-      output$table <- renderTable(output_table)
+      output$table <<- renderDT(global_table)
       
       
       #Update the map: clear all tiles, then add only the ones that overlap in Red
@@ -153,7 +174,8 @@ server <- function(input, output){
         addProviderTiles(providers$CartoDB.VoyagerOnlyLabels) %>% 
         setView(lat=10, lng=0, zoom=2)
       
-      output$table <- renderTable(NULL)
+      output$table <- renderDT(NULL)
+      global_table <<- NULL
       
     }
     
@@ -163,6 +185,60 @@ server <- function(input, output){
 
 
 
+
+
+#Helper Functions
+
+
+#Given two data frames of different length, return a third array of x amd mx merged by columns
+#with NULL filling the empty space 
+cbind.pad <- function(x, mx){
+  
+  
+  #Base cases: passing one or two null values, equal dimensions
+  if(is.null(x) && is.null(mx))
+    return(data.frame())
+  
+  else if(is.null(x))
+    return(mx)
+  
+  else if(is.null(mx))
+    return(x)
+  
+  len <- max(nrow(x), nrow(mx))
+  
+  
+  if(nrow(x) == nrow(mx))
+    return(cbind(x, mx))
+  
+  #Real work of the method: 
+  else if(nrow(x) < nrow(mx)){
+    x <- padNULL(x, len)
+    return(cbind(x, mx))
+    
+    
+  }
+  
+  else{
+    mx <- padNULL(mx, len)
+    return(cbind(x, mx))
+  }
+  
+}
+
+#Recursive function that adds NULLs to the end of data frame x until x reaches the desired len
+padNULL <- function(x, len){
+  
+  if(is_empty(x))
+    return(data.frame(rep(NA, len)))
+  
+  if(nrow(x) == len)
+    return(x)
+  
+  else
+    return(padNULL(rbind(x, rep(NA, ncol(x))), len))
+  
+}
 
 shinyApp(ui, server)
 
