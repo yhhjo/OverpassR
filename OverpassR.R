@@ -29,19 +29,18 @@ ui <- fluidPage(
   actionButton("refreshButton", "Clear Tiles"),
   
   fluidRow(
-    column(12,
-           DTOutput('table'),
+    column(12, DTOutput('table')
     ),
     
     column(12, offset = 8,
            dateRangeInput("dates", "Date range:",
                           start = Sys.Date(),
-                          end = Sys.Date()+16),
+                          end = Sys.Date()+16)
     ),
     
     column(12, offset = 8, 
-           actionButton('applyDates', "Apply Date Filter"),
-    ),
+           actionButton('applyDates', "Apply Date Filter")#,
+    )
   )  
 )
 
@@ -62,6 +61,8 @@ server <- function(input, output){
         options = layersControlOptions(collapsed = FALSE)
       )
     
+    leaflet() %>% addProviderTiles(providers$Esri.WorldImagery) %>% 
+      addProviderTiles(providers$CartoDB.VoyagerOnlyLabels) %>% setView(lat=10, lng=0, zoom=2) 
   })
   
   
@@ -88,7 +89,7 @@ server <- function(input, output){
       #Convert the point to a shape file so they can intersect
       pnt <-  st_as_sf(point, coords = c('lon' , 'lat'))
       
-    
+      
       #Create a boolean matrix of all the polygons that intersect pnt (a user's mapclick)
       ## And select those polygons from WRS
       boolean_matrix <- st_intersects(wrs, pnt, sparse = FALSE)
@@ -131,7 +132,7 @@ server <- function(input, output){
         
         else
           global_table <<- appending_table     
-         
+        
       }
       
       
@@ -251,4 +252,3 @@ padNULL <- function(x, len){
 }
 
 shinyApp(ui, server)
-
