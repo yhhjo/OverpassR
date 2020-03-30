@@ -32,18 +32,18 @@ ui <- fluidPage(
   
   fluidRow(
     column(12,
-           DTOutput('table' ),
+           DTOutput('table' )#,
     ),
     
     column(12, offset = 8,
            dateRangeInput("dates", "Date range:",
                           start = Sys.Date(),
-                          end = Sys.Date()+16),
+                          end = Sys.Date()+16)#,
     ),
     
     column(12, offset = 8, 
-           actionButton('applyDates', "Apply Date Filter"),
-    ),
+           actionButton('applyDates', "Apply Date Filter")#,
+    )#,
   )  
 )
 
