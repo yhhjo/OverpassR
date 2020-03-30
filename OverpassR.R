@@ -116,9 +116,9 @@ server <- function(input, output){
         updating_table <- updating_table %>% t() %>% t()
         appending_table <- rbind("tile_ID" = tile_ID, "overlapping rows" = overlapping_rows, "overlapping paths" = overlapping_paths, "next pass" = updating_table) %>% as.data.frame()
         appending_table <- `colnames<-`(appending_table, 'Tile')
-        #If global table isn't empty, update it with the new click and unique values
         
-        if(!ncol(global_table) == 0){
+        #If global table isn't empty, update it with the new click and unique values
+        if(!is.null(global_table)){
           global_table <<- cbind.pad(appending_table, global_table) %>% as.data.frame()
         }
         
@@ -137,8 +137,8 @@ server <- function(input, output){
         appending_table <- rbind("tile_ID" = tile_ID, "overlapping_rows" = overlapping_rows, "overlapping_paths" = overlapping_paths, "next_pass" = next_pass) %>% as.data.frame()
         appending_table <- `colnames<-`(appending_table, "Tile")
         
-        #If global table isn't populated yet, update it with appending-table. Otherwise, append the new values to the global table
-        if(!ncol(global_table) == 0)
+        #If global table is already populated , update it with appending-table
+        if(!is.null(global_table))
           global_table <<- cbind.pad(appending_table, global_table)
         
         
