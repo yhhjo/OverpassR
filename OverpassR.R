@@ -23,7 +23,7 @@ global_table = data.frame("tile_ID" = numeric(), "overlapping_rows" = numeric(),
 
 ui <- fluidPage(
   
-  titlePanel("World Reference System Satellite Tiles"),
+  titlePanel("OverpassR"),
   mainPanel("Click on a tile to see its next WRS overpass date"),
   leafletOutput('map'),
   actionButton("refreshButton", "Clear Tiles"),
@@ -50,7 +50,7 @@ server <- function(input, output){
   
   #Render map with base layers WorldImagery and Labels
   output$map <- renderLeaflet({
-
+    
     leaflet() %>%
       addTiles(group = "Default") %>%
       addProviderTiles(providers$Esri.WorldImagery, group = "Satellite") %>%
@@ -61,8 +61,7 @@ server <- function(input, output){
         options = layersControlOptions(collapsed = FALSE)
       )
     
-    leaflet() %>% addProviderTiles(providers$Esri.WorldImagery) %>% 
-      addProviderTiles(providers$CartoDB.VoyagerOnlyLabels) %>% setView(lat=10, lng=0, zoom=2) 
+    
   })
   
   
@@ -158,9 +157,9 @@ server <- function(input, output){
       
       #Generate and display output table
       output$table <<- renderDT(
-        global_table, options = list(searching = FALSE),
-        )
-    
+        global_table, options = list(searching = FALSE, dom = 't')
+      )
+      
       #Update the map: clear all tiles, then add only the ones that overlap in Red
       leafletProxy("map") %>%
         addTiles(group = "Default") %>%
