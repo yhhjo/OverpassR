@@ -1,3 +1,4 @@
+#All packages used at some point in the project - will narrow down at the end
 library(shiny)
 library(leaflet)
 library(sf)
@@ -9,10 +10,12 @@ library(lubridate)
 library(DT)
 library(dplyr)
 library(plyr)
+
 #Read the wrs tiles 
 wrs <- st_read('data/in/wrs2_asc_desc.shp')
 wrs <- wrs[wrs$MODE == 'D',]
 
+#Lookup table and array of dates
 lookup_table <- read.delim('data/in/lookup_table.txt')
 global <- reactiveValues(min_date = Sys.Date(), max_date = Sys.Date() + 16)
 
@@ -41,19 +44,18 @@ ui <- fluidPage(
     column(12, offset = 8, 
            actionButton('applyDates', "Apply Date Filter"),
     ),
-  )
-  
+  )  
 )
 
 
 
 server <- function(input, output){
   
-  
+  #Render map with base layers WorldImagery and Labels
   output$map <- renderLeaflet({
-    leaflet() %>% addProviderTiles(providers$Esri.WorldImagery) %>% addProviderTiles(providers$CartoDB.VoyagerOnlyLabels) %>% setView(lat=10, lng=0, zoom=2)
     
-    
+    leaflet() %>% addProviderTiles(providers$Esri.WorldImagery) %>% 
+              addProviderTiles(providers$CartoDB.VoyagerOnlyLabels) %>% setView(lat=10, lng=0, zoom=2)  
   })
   
   
@@ -80,9 +82,9 @@ server <- function(input, output){
       #Convert the point to a shape file so they can intersect
       pnt <-  st_as_sf(point, coords = c('lon' , 'lat'))
       
-      
-      #Create a binary matrix of all the polygons that intersect pnt (a user's mapclick)
-      #And select those polygons
+    
+      #Create a boolean matrix of all the polygons that intersect pnt (a user's mapclick)
+      ## And select those polygons from WRS
       boolean_matrix <- st_intersects(wrs, pnt, sparse = FALSE)
       overlapping_tiles <- (wrs[boolean_matrix,])
       overlapping_paths <-  overlapping_tiles$PATH
@@ -90,8 +92,11 @@ server <- function(input, output){
       tile_ID <- overlapping_tiles$PR
       
       
-      #Rows of the lookup table from the intersected tile; pull the "Overpass" column (earlier known date of satellite overpass)
+      #Rows of the lookup table from the intersected tile; pull the "Overpass" 
+      ##column (earlier known date of satellite overpass)
       known_pass <- lookup_table[overlapping_paths,]$Overpass
+      
+      
       
       if(input$applyDates){
         
@@ -117,13 +122,9 @@ server <- function(input, output){
           global_table <<- cbind.pad(appending_table, global_table) %>% as.data.frame()
         }
         
-        
-        else{
-          global_table <<- appending_table
-          
-        }
-        
-        
+        else
+          global_table <<- appending_table     
+         
       }
       
       
