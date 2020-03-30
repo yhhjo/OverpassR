@@ -17,33 +17,30 @@ wrs <- wrs[wrs$MODE == 'D',]
 
 #Lookup table and array of dates
 lookup_table <- read.delim('data/in/lookup_table.txt')
-global <- reactiveValues(min_date = Sys.Date(), max_date = Sys.Date() + 16)
 
 #Global variable output table. It will update with each map click and reset only when 'reset map' button is clicked
 global_table = data.frame("tile_ID" = numeric(), "overlapping_rows" = numeric(), "overlapping_paths" = numeric(), "next_pass" = character()) %>% t() %>% as.data.frame()
-
 
 ui <- fluidPage(
   
   titlePanel("World Reference System Satellite Tiles"),
   mainPanel("Click on a tile to see its next WRS overpass date"),
   leafletOutput('map'),
-  actionButton("refreshButton", "Refresh Map"),
+  actionButton("refreshButton", "Clear Tiles"),
   
   fluidRow(
-    column(12,
-           DTOutput('table' )#,
+    column(12, DTOutput('table')
     ),
     
     column(12, offset = 8,
            dateRangeInput("dates", "Date range:",
                           start = Sys.Date(),
-                          end = Sys.Date()+16)#,
+                          end = Sys.Date()+16)
     ),
     
     column(12, offset = 8, 
            actionButton('applyDates', "Apply Date Filter")#,
-    )#,
+    )
   )  
 )
 
@@ -53,9 +50,19 @@ server <- function(input, output){
   
   #Render map with base layers WorldImagery and Labels
   output$map <- renderLeaflet({
+
+    leaflet() %>%
+      addTiles(group = "Default") %>%
+      addProviderTiles(providers$Esri.WorldImagery, group = "Satellite") %>%
+      addProviderTiles(providers$CartoDB.VoyagerOnlyLabels, group = "Satellite") %>%
+      setView(lat=10, lng=0, zoom=2)  %>%
+      addLayersControl(
+        baseGroups = c("Default", "Satellite"),
+        options = layersControlOptions(collapsed = FALSE)
+      )
     
     leaflet() %>% addProviderTiles(providers$Esri.WorldImagery) %>% 
-      addProviderTiles(providers$CartoDB.VoyagerOnlyLabels) %>% setView(lat=10, lng=0, zoom=2)  
+      addProviderTiles(providers$CartoDB.VoyagerOnlyLabels) %>% setView(lat=10, lng=0, zoom=2) 
   })
   
   
@@ -92,10 +99,9 @@ server <- function(input, output){
       tile_ID <- overlapping_tiles$PR
       
       
-      #Rows of the lookup table from the intersected tile; pull the "Overpass" 
-      ##column (earlier known date of satellite overpass)
+      #Rows of the lookup table from the intersected tile; 
+      ##pull the "Overpass" column (earlier known date of satellite overpass)
       known_pass <- lookup_table[overlapping_paths,]$Overpass
-      
       
       
       if(input$applyDates){
@@ -114,11 +120,13 @@ server <- function(input, output){
         }
         
         updating_table <- updating_table %>% t() %>% t()
-        appending_table <- rbind("tile_ID" = tile_ID, "overlapping rows" = overlapping_rows, "overlapping paths" = overlapping_paths, "next pass" = updating_table) %>% as.data.frame()
-        appending_table <- `colnames<-`(appending_table, 'Tile')
-        #If global table isn't empty, update it with the new click and unique values
         
-        if(!ncol(global_table) == 0){
+        appending_table <- rbind("tile_ID" = tile_ID, "overlapping rows" = overlapping_rows, 
+                                 "overlapping paths" = overlapping_paths,"next pass" = updating_table) %>% as.data.frame()
+        appending_table <- `colnames<-`(appending_table, 'Tile')
+        
+        #If global table isn't empty, update it with the new click and unique values
+        if(!is.null(global_table)){
           global_table <<- cbind.pad(appending_table, global_table) %>% as.data.frame()
         }
         
@@ -134,11 +142,12 @@ server <- function(input, output){
         next_pass <- (Sys.Date() + days_til) %>% as.character.Date()
         
         #Table with all of the data from the map click
-        appending_table <- rbind("tile_ID" = tile_ID, "overlapping_rows" = overlapping_rows, "overlapping_paths" = overlapping_paths, "next_pass" = next_pass) %>% as.data.frame()
+        appending_table <- rbind("tile_ID" = tile_ID, "overlapping_rows" = overlapping_rows,
+                                 "overlapping_paths" = overlapping_paths, "next_pass" = next_pass) %>% as.data.frame()
         appending_table <- `colnames<-`(appending_table, "Tile")
         
-        #If global table isn't populated yet, update it with appending-table. Otherwise, append the new values to the global table
-        if(!ncol(global_table) == 0)
+        #If global table is already populated , update it with appending-table
+        if(!is.null(global_table))
           global_table <<- cbind.pad(appending_table, global_table)
         
         
@@ -148,40 +157,41 @@ server <- function(input, output){
       }
       
       #Generate and display output table
-      output$table <<- renderDT(global_table)
-      
-      
+      output$table <<- renderDT(
+        global_table, options = list(searching = FALSE)
+        )
+    
       #Update the map: clear all tiles, then add only the ones that overlap in Red
-      leafletProxy("map")%>%
-        addProviderTiles(providers$Esri.WorldImagery) %>% 
-        addProviderTiles(providers$CartoDB.VoyagerOnlyLabels) %>% 
+      leafletProxy("map") %>%
+        addTiles(group = "Default") %>%
+        addProviderTiles(providers$Esri.WorldImagery, group = "Satellite") %>%
+        addProviderTiles(providers$CartoDB.VoyagerOnlyLabels, group = "Satellite") %>%
         setView(lng = lon , lat = lat, zoom = 6) %>%
-        addPolygons(data = overlapping_tiles, color = 'red')
-      
+        addPolygons(data = overlapping_tiles, color = 'red') %>%
+        addLayersControl(
+          baseGroups = c("Default", "Satellite"),
+          options = layersControlOptions(collapsed = FALSE)
+        )
     }  
     
   })
   
   
-  #Use a separate observer to refresh the map as needed
-  observe( {
+  #Use a separate observer to clear shapes and output table if "clear tiles" button clicked
+  observe({
     
     proxyMap <- leafletProxy("map")
     
     if(input$refreshButton){
+      
       proxyMap%>%
-        clearShapes()%>%
-        addProviderTiles(providers$Esri.WorldImagery) %>%
-        addProviderTiles(providers$CartoDB.VoyagerOnlyLabels) %>% 
-        setView(lat=10, lng=0, zoom=2)
+        clearShapes()
       
       output$table <- renderDT(NULL)
       global_table <<- NULL
       
     }
-    
   })
-  
 }
 
 
