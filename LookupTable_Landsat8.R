@@ -27,7 +27,8 @@ for(r in csv_data$Paths.){
   index <-  index+1
   
 }
-lt
+
+write.table(lt, "LookupTable.txt", sep="\t")
 
 
 
