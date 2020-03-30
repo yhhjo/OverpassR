@@ -157,7 +157,7 @@ server <- function(input, output){
       
       #Generate and display output table
       output$table <<- renderDT(
-        global_table, options = list(searching = FALSE)
+        global_table, options = list(searching = FALSE),
         )
     
       #Update the map: clear all tiles, then add only the ones that overlap in Red
