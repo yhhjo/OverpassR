@@ -19,34 +19,68 @@ wrs <- wrs[wrs$MODE == 'D',]
 lookup_table <- read.delim('data/in/lookup_table.txt')
 
 #Global variable output table. It will update with each map click and reset only when 'reset map' button is clicked
-global_table = data.frame("tile_ID" = numeric(), "overlapping_rows" = numeric(), "overlapping_paths" = numeric(), "next_pass" = character()) %>% t() %>% as.data.frame()
+global_table = data.frame()
 
+##COME BACK HERE
 ui <- fluidPage(
   
-  titlePanel("OverpassR"),
-  mainPanel("Click on a tile to see its next WRS overpass date"),
-  leafletOutput('map'),
-  actionButton("refreshButton", "Clear Tiles"),
+  fixedRow(
+    column(4, offset = 5,
+           titlePanel("OverpassR")),
+  ),
+  
+  fixedRow(
+    column(10, offset = 3, 
+           mainPanel("Click on map or enter coordinates to view satellite overpass information")
+    )
+  ),
+  
+  leafletOutput('map', width = 1000, height = 500),
   
   fluidRow(
-    column(12, DTOutput('table')
+    column(1, offset = 0, actionButton("refreshButton", "Reset")),
+    uiOutput("ui")
+  ),
+  
+  #Row with coordinate input, date input, search
+  fixedRow(
+    
+    column(2, offset = 1,
+           textInput("lat", label = NULL , value = "", placeholder = "Lat", width = 130)
+    ),
+    column(2,
+           textInput("lon", label = NULL , value = "", placeholder = "Lon", width = 130)
     ),
     
-    column(12, offset = 8,
+    column(1, offset = 0, 
+           actionButton("find", label = "Find")
+    ),
+    
+    column(3, offset = 2,
            dateRangeInput("dates", "Date range:",
                           start = Sys.Date(),
                           end = Sys.Date()+16)
-    ),
-    
-    column(12, offset = 8, 
-           actionButton('applyDates', "Apply Date Filter")#,
     )
-  )  
+  ),
+  
+  #Apply Date Button
+  fixedRow( 
+    column(1, offset = 8,
+           actionButton('applyDates', "Apply Date Filter")
+    )
+  ),
+  
+  fluidRow(
+    column(8, offset = 1, DTOutput('table'))
+  )
 )
 
 
 
-server <- function(input, output){
+server <- function(input, output, session){
+  
+  proxy_table = dataTableProxy('table')
+  proxyMap <- leafletProxy("map")
   
   #Render map with base layers WorldImagery and Labels
   output$map <- renderLeaflet({
@@ -63,10 +97,6 @@ server <- function(input, output){
     
     
   })
-  
-  
-  proxy_table = dataTableProxy('table')
-  
   
   observeEvent(input$map_click,{
     
@@ -104,33 +134,39 @@ server <- function(input, output){
       
       
       if(input$applyDates){
-        
+       
+        #Validate is preventing the app running dates out of range, but no error message is being displayed, 
+        validate(
+          need( (as.numeric(input$dates[2] - input$dates[1]) >=16), label = "ui", message =  "Please enter valid date range") 
+        )
+    
         start_date <- input$dates[1]
         end_date <- input$dates[2]
+        
+        
+        
         days_til <- (as.numeric(start_date - known_pass)) %% 16
         next_pass <- (start_date + days_til) %>% as.Date()
         
         len <- 1:length(next_pass)
         updating_table <- NULL
         
+        #Each loop iteration creates a data frame "temp" of dates, path, row, lat, lon for one tile
+        ## Subseqeuent iterations create a temp data frame, then append the new data frame to the previous one
         for (r in len){
-          x <- seq.Date(next_pass[r], to = end_date, by = 16) %>% as.data.frame.character()
-          updating_table <- cbind.pad(updating_table, x)
+          dates <- seq.Date(next_pass[r], to = end_date, by = 16) %>% as.character()
+          temp <- cbind("Date" = dates, "Path" = overlapping_paths, "Row" = overlapping_rows, "Lat" = lat, "Long" = lon)
+          updating_table <- rbind(updating_table, temp)
         }
         
-        updating_table <- updating_table %>% t() %>% t()
-        
-        appending_table <- rbind("tile_ID" = tile_ID, "overlapping rows" = overlapping_rows, 
-                                 "overlapping paths" = overlapping_paths,"next pass" = updating_table) %>% as.data.frame()
-        appending_table <- `colnames<-`(appending_table, 'Tile')
         
         #If global table isn't empty, update it with the new click and unique values
         if(!is.null(global_table)){
-          global_table <<- cbind.pad(appending_table, global_table) %>% as.data.frame()
+          global_table <<- rbind(updating_table, global_table)
         }
         
         else
-          global_table <<- appending_table     
+          global_table <<- updating_table     
         
       }
       
@@ -141,13 +177,12 @@ server <- function(input, output){
         next_pass <- (Sys.Date() + days_til) %>% as.character.Date()
         
         #Table with all of the data from the map click
-        appending_table <- rbind("tile_ID" = tile_ID, "overlapping_rows" = overlapping_rows,
-                                 "overlapping_paths" = overlapping_paths, "next_pass" = next_pass) %>% as.data.frame()
-        appending_table <- `colnames<-`(appending_table, "Tile")
-        
+        appending_table <-  cbind("Date" = next_pass, "Path" = overlapping_paths, 
+                                  "Row" = overlapping_rows, "Lat" = lat, "Long" = lon) %>% as.data.frame()
+
         #If global table is already populated , update it with appending-table
         if(!is.null(global_table))
-          global_table <<- cbind.pad(appending_table, global_table)
+          global_table <<- rbind(appending_table, global_table)
         
         
         else
@@ -157,7 +192,7 @@ server <- function(input, output){
       
       #Generate and display output table
       output$table <<- renderDT(
-        global_table, options = list(searching = FALSE, dom = 't')
+        global_table, options = list(paging = FALSE, searching = FALSE, info = FALSE) 
       )
       
       #Update the map: clear all tiles, then add only the ones that overlap in Red
@@ -179,17 +214,32 @@ server <- function(input, output){
   #Use a separate observer to clear shapes and output table if "clear tiles" button clicked
   observe({
     
-    proxyMap <- leafletProxy("map")
-    
+
     if(input$refreshButton){
       
-      proxyMap%>%
-        clearShapes()
+      proxyMap%>% clearShapes()
       
+      updateDateRangeInput(session, "dates", "Date range:",
+                           start = Sys.Date(),
+                           end = Sys.Date()+16
+                           )
+    
       output$table <- renderDT(NULL)
       global_table <<- NULL
       
     }
+  })
+  
+  #Observer if Lat/Lon are manually entered
+  observe({
+    
+    if(input$find){
+      lat <- input$lat %>% as.numeric()
+      lon <- input$lon %>% as.numeric()
+      
+      validateCoords(lon, lat)
+    }
+    
   })
 }
 
@@ -197,57 +247,6 @@ server <- function(input, output){
 
 
 
-#Helper Functions
 
-
-#Given two data frames of different length, return a third array of x amd mx merged by columns
-#with NULL filling the empty space 
-cbind.pad <- function(x, mx){
-  
-  
-  #Base cases: passing one or two null values, equal dimensions
-  if(is.null(x) && is.null(mx))
-    return(data.frame())
-  
-  else if(is.null(x))
-    return(mx)
-  
-  else if(is.null(mx))
-    return(x)
-  
-  len <- max(nrow(x), nrow(mx))
-  
-  
-  if(nrow(x) == nrow(mx))
-    return(cbind(x, mx))
-  
-  #Real work of the method: 
-  else if(nrow(x) < nrow(mx)){
-    x <- padNULL(x, len)
-    return(cbind(x, mx))
-    
-    
-  }
-  
-  else{
-    mx <- padNULL(mx, len)
-    return(cbind(x, mx))
-  }
-  
-}
-
-#Recursive function that adds NULLs to the end of data frame x until x reaches the desired len
-padNULL <- function(x, len){
-  
-  if(is_empty(x))
-    return(data.frame(rep(NA, len)))
-  
-  if(nrow(x) == len)
-    return(x)
-  
-  else
-    return(padNULL(rbind(x, rep(NA, ncol(x))), len))
-  
-}
 
 shinyApp(ui, server)
