@@ -80,7 +80,7 @@ ui <- fluidPage(
   
   fixedRow(
     column(1, offset = 8, 
-           actionButton('export', "Export CSV") )
+           downloadButton('download', "Download") )
   )
 )
 
@@ -151,13 +151,14 @@ server <- function(input, output, session){
   }
   )
   
+  #Updates map with tiles and global table with data given coordinates of a click
   generate <- function(lon, lat){
     
     df <- returnPR(lon, lat, wrs)
     paths <- df$path
     rows <- df$row
     tile_shapes <- df$shape.geometry
-    
+
     #Shape file of tiles that intersect
     reference_date <- lookup_table[paths,]$Overpass
     
@@ -217,9 +218,6 @@ server <- function(input, output, session){
     else
       global_table <<- updating_table
     
-    
-    
-    
     #Display table
     output$table <<- renderDT(
       global_table, options = list(paging = FALSE, searching = FALSE, info = FALSE) 
@@ -231,13 +229,25 @@ server <- function(input, output, session){
       addProviderTiles(providers$Esri.WorldImagery, group = "Satellite") %>%
       addProviderTiles(providers$CartoDB.VoyagerOnlyLabels, group = "Satellite") %>%
       setView(lng = lon , lat = lat, zoom = 6) %>%
-      addPolygons(data = tile_shapes, color = 'red') %>%
+      addPolygons(
+        data = tile_shapes, color = 'blue', weight = 1, 
+        highlightOptions = highlightOptions(color = 'black', weight = 3, bringToFront = TRUE), 
+        label = row_number(global_table$Path)) %>%
       addLayersControl(
         baseGroups = c("Default", "Satellite"),
-        options = layersControlOptions(collapsed = FALSE)
-      )
+        options = layersControlOptions(collapsed = TRUE))
   }
+  
+  output$download <- downloadHandler(
+    filename = "overpassR.csv",
+    content = function(file){
+      write.csv(global_table, file, row.names = TRUE)
+    }
+  )
 }
+
+
+#Helper methods---------------------------------------------------------------------------------------------------
 
 
 #Helper method takes lon, lat, shapefile, and returns PR of intersected tiles 
