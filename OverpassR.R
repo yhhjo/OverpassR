@@ -123,7 +123,7 @@ server <- function(input, output, session){
     
     global_coords <<- rbind(global_coords, cbind("Long" = lon, "Lat" = lat)) %>% distinct()
     
-    generate(lon, lat)
+    generate(lon, lat, lookup_table)
   })
   
   
@@ -138,7 +138,7 @@ server <- function(input, output, session){
     
     global_coords <<- rbind(global_coords, cbind("Long" = lon, "Lat" = lat)) %>% distinct()
     
-    generate(lon, lat)
+    generate(lon, lat, lookup_table)
     
   })
   
@@ -180,13 +180,14 @@ server <- function(input, output, session){
     global_table <<- data.frame()
     
     for(row in 1:nrow(global_coords)){
-      generate(global_coords$Long[row], global_coords$Lat[row])
+      generate(global_coords$Long[row], global_coords$Lat[row], lookup_table)
     }
     
   })
   
+  
   #Updates map with tiles and global table with data given coordinates of a click
-  generate <- function(lon, lat){
+  generate <- function(lon, lat, ref){
     
     ##Here, WRS variable can be replaced with the list of checked boxes
     df <- returnPR(lon, lat, wrs)
@@ -194,13 +195,8 @@ server <- function(input, output, session){
     rows <- df$row
     tile_shapes <- df$shape.geometry
     
-    #Shape file of tiles that intersect
-    reference_date <- lookup_table[paths,]$Overpass
-    
-    #Handles if date filter is applied  
-    
-    start_date <- input$dates[1]
-    end_date <- input$dates[2]
+    start_date <- input$dates[1] %>% as.numeric()
+    end_date <- input$dates[2] %>% as.numeric()
     
     #Be sure user selects a positive date range
     if(start_date >= end_date){
@@ -208,34 +204,39 @@ server <- function(input, output, session){
       return(NULL)
     }
     
-    days_til <- (start_date %>% as.numeric() - reference_date ) %% 16
-    next_pass <- start_date + days_til
+    #Create range of dates from start - end
+    range <- start_date:end_date %>% as.Date('1970-01-01') %>% as.character()
     
-    #No overpass in the selected range
-    #Try (end_date < next_pass)
-    if( all(next_pass > end_date) ){
-      output$helpText <- renderText("No Overpasses in selected date range")
+    #Find a known start date for the cycle
+    CYCLE_1_REFERENCE <- ref$Cycle_Start[1] %>% as.Date() %>% as.numeric()
+    
+    #Find 'start date's' cycle 
+    start_date_cycle <- (start_date - CYCLE_1_REFERENCE) %% 16 + 1
+    
+    #Lookup table where every date in rnge has corresponding cycle
+    table <- cbind("Date" = range, "Cycle" = getCycles(1, 16, length(range), 
+                                                       start_date_cycle - 1 )) %>% as.data.frame()
+    
+    updating_table <- NULL
+    
+    for(r in 1:length(paths)){
+      cycle <- ref[ref$Path==paths[r],]$Cycle
+      dates <- table[table$Cycle==cycle,]$Date %>% as.character()
+      
+      if(is_empty(dates))
+        next
+      
+      updating_table <- rbind(updating_table, cbind("Dates" = dates, "Path" = paths[r], "Row" = rows[r], "Lat" = round(lat,5), "Long" = round(lon,5) ))
+    }
+    
+    
+    if(is_empty(updating_table)){
+      output$helpText <- renderText("No overpass in selected date range")
       return(NULL)
     }
     
-    #Clear text output if a valid date range is entered
-    else {
+    else
       output$helpText <- renderText({})
-    }
-    
-    len <- 1:length(next_pass)
-    updating_table <- NULL
-    
-    #Each loop iteration creates a data frame "temp" of dates, path, row, lat, lon for one tile
-    ## Subseqeuent iterations create a temp data frame, then append the new data frame to the previous one
-    for (r in len){
-      if(next_pass[r] > end_date)
-        next
-      dates <- seq.Date(next_pass[r], to = end_date, by = 16) %>% as.character()
-      temp <- cbind("Date" = dates, "Path" = paths, "Row" = rows, "Lat" = round(lat,5), "Long" = round(lon,5))
-      updating_table <- rbind(updating_table, temp)
-    }
-    
     
     
     #Renders distinct output
@@ -253,14 +254,16 @@ server <- function(input, output, session){
       global_table, rownames = NULL, options = list(paging = FALSE, searching = FALSE, info = FALSE) 
     )
     
-    #Update the map: clear all tiles, then add only the ones that overlap in Red
+    #-------------------------------------------------------------------------------------------------------------------------------
+    
+    #Update the map
     leafletProxy("map") %>%
       addTiles(group = "Default") %>%
       addProviderTiles(providers$Esri.WorldImagery, group = "Satellite") %>%
       addProviderTiles(providers$CartoDB.VoyagerOnlyLabels, group = "Satellite") %>%
       setView(lng = lon , lat = lat, zoom = 6) %>%
       addPolygons(
-        data = tile_shapes, color = 'blue', weight = 2, 
+        data = tile_shapes, color = 'blue', weight = 2, label = toString(c(paths, rows)),
         highlightOptions = highlightOptions(color = 'white', weight = 3, bringToFront = TRUE)) %>%
       addLayersControl(
         baseGroups = c("Satellite", "Default"),
@@ -322,6 +325,13 @@ validCoords <- function(lon, lat){
   )
   
 } 
+
+
+
+getCycles <- function(from, to, len, offset = 0){
+  cycles <- rep(1:16, length.out = (len+offset))
+  return(cycles[(1+offset):length(cycles)])
+}
 
 
 
