@@ -8,8 +8,9 @@ library(sp)
 library(rgdal)
 library(lubridate)
 library(DT)
-library(dplyr)
 library(plyr)
+library(dplyr)
+
 
 #Read the wrs tiles 
 wrs <- st_read('data/in/wrs2_asc_desc.shp')
@@ -26,7 +27,7 @@ ui <- fluidPage(
   
   fixedRow(
     column(4, offset = 5,
-           titlePanel("OverpassR")),
+           titlePanel("OverpassR")) #,
   ),
   
   fixedRow(
