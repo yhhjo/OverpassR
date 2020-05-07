@@ -8,15 +8,15 @@ library(sp)
 library(rgdal)
 library(lubridate)
 library(DT)
-library(dplyr)
 library(plyr)
+library(dplyr)
 
 #Read the wrs tiles 
-wrs <- st_read('data/in/wrs2_asc_desc.shp')
+wrs <- st_read('Data/In/wrs2_asc_desc.shp')
 wrs <- wrs[wrs$MODE == 'D',]
 
 #Lookup table and array of dates
-lookup_table <- read.csv('data/in/landsat8_lookup.csv')
+lookup_table <- read.csv('Data/In/landsat8_lookup.csv')
 
 #Global variables. It will update with each map click and reset only when 'reset map' button is clicked
 global_table = data.frame()
@@ -31,12 +31,13 @@ ui <- fluidPage(
   ),
   
   fixedRow(
-    column(10, offset = 3, 
-           mainPanel("Click on map or enter coordinates to view satellite overpass information")
+    column(12, offset = 2, 
+           mainPanel("Click on the map or manually enter coordinates to see which WRS tiles overlap with that point. 
+                      View the LANDSAT 8 overpass information for the tiles. Apply the date range filter to augment the table. ")
     )
   ),
   
-  leafletOutput('map', width = 1000, height = 500),
+  leafletOutput('map', width = '100%', height = 500),
   
   fluidRow(
     column(1, offset = 0, actionButton("refreshButton", "Reset")),
@@ -263,7 +264,7 @@ server <- function(input, output, session){
       addProviderTiles(providers$CartoDB.VoyagerOnlyLabels, group = "Satellite") %>%
       setView(lng = lon , lat = lat, zoom = 6) %>%
       addPolygons(
-        data = tile_shapes, color = 'blue', weight = 2, label = toString(c(paths, rows)),
+        data = tile_shapes, color = 'blue', weight = 2, label = paste0('Path: ',paths,'; Row: ', rows),
         highlightOptions = highlightOptions(color = 'white', weight = 3, bringToFront = TRUE)) %>%
       addLayersControl(
         baseGroups = c("Satellite", "Default"),
