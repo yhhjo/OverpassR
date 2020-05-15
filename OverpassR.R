@@ -39,7 +39,7 @@ ui <- fluidPage(
              "This website facilitates the planning of field work that wants to incorporate remote sensing into their study design.
                      Select your preferred satellite and click on the map or manually enter study site coordinates to see when the next satellite
                      overpass will occur for the selected area. For extended periods, enter a date range to extract all overpasses within the given time period.
-                     The date information can be downloaded as a cvs by clicking the 'Download' button at the bottom." 
+                     The date information can be downloaded as a csv by clicking the 'Download' button at the bottom." 
            )
     )
   ), 
@@ -134,7 +134,7 @@ server <- function(input, output, session){
     lat <- input$lat %>% as.numeric()
     
     if(!validCoords(lon, lat)){
-      output$helpText <- renderText("Enter valid coordinates")
+      output$helpText <- renderText("Enter valid coordinates. High tile density in poles limites latitude to (-82,82)")
       return()
     }
     
@@ -359,7 +359,7 @@ validCoords <- function(lon, lat){
     return(FALSE)
   
   return(
-    (lat>=-90 && lat<=90) && 
+    (lat>-82 && lat<82) && 
       (lon>=-180 && lon<=180)
   )
   
