@@ -16,8 +16,8 @@ wrs <- st_read('Data/In/wrs2_asc_desc.shp')
 wrs <- wrs[wrs$MODE == 'D',]
 
 #Lookup tables for Landsat 7 and 8
-ls8 <- read.csv('Data/In/landsat8_lookup.csv') %>% cbind("Satellite" = "Landsat8")
-ls7 <- read.csv('Data/In/landsat7_lookup.csv') %>% cbind("Satellite" = "Landsat7")
+ls8 <- read.csv('Data/In/Landsat/landsat8_lookup.csv') %>% cbind("Satellite" = "Landsat8")
+ls7 <- read.csv('Data/In/Landsat/landsat7_lookup.csv') %>% cbind("Satellite" = "Landsat7")
 
 #Used to select a table when toggling between satellites
 lookup_table <- list("Landsat8"=ls8,"Landsat7"=ls7)
