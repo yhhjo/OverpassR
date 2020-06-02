@@ -12,7 +12,7 @@ library(plyr)
 library(dplyr)
 
 #Read the wrs tiles 
-wrs <- st_read('Data/In/wrs2_asc_desc.shp')
+wrs <- st_read('Data/In/Landsat/wrs2_asc_desc.shp')
 wrs <- wrs[wrs$MODE == 'D',]
 
 #Lookup tables for Landsat 7 and 8
