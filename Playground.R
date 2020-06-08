@@ -15,22 +15,37 @@ MGRS <- st_read('Data/In/Sentinel/sentinel2_tiles_world.shp', stringsAsFactors =
 lon <- 73.1
 lat <- 67.1
 start <- "2020-07-01" %>% as.Date() %>% as.numeric()
-stop <- "2020-07-13" %>% as.Date() %>% as.numeric()
+stop <- "2020-07-13" %>% as.Date()
 
+#------------------------
 
 click <- cbind(lon, lat) %>% as.data.frame() %>% SpatialPoints() %>% st_as_sf(coords = c('lon','lat'))
 st_crs(click) = 4326
-swath_bool <- st_intersects(click, PARSED, sparse = FALSE)
-mgrs_bool <- st_intersects(click, MGRS, sparse = FALSE)
+swaths <- PARSED[st_intersects(click, PARSED, sparse = FALSE),]
+mgrs <- MGRS[st_intersects(click, MGRS, sparse = FALSE),]
 
-ref_date <- PARSED[swath_bool,]$Overpass %>% as.Date() %>% as.numeric()
+output_table <- data.frame()
 
-dates <- data.frame()
+#For each MGRS tile
+for (r in 1:length(mgrs)){
+  
+  swath_dates <- swaths[st_contains(swaths, mgrs[r,], sparse = FALSE),]$Overpass %>% as.Date() %>% as.numeric()
+  first_pass_within_range <- start + ((start - swath_dates) %% 5)
+  
+  #Eliminates duplicates
+  first_pass_within_range <- first_pass_within_range[!(first_pass_within_range %% 5) %>% duplicated()]
+  
+  for (c in 1:length(first_pass_within_range)){
+    from <- first_pass_within_range[c] %>% as.Date('1970-01-01')
+    dates <- seq.Date(from, stop, by = 5) %>% as.character()
+    updating <- cbind("Dates" = dates, "MGRS" = rep(mgrs[r,]$Name, length(dates)),"WRS" = NA  ,"Satellite" = rep("Sentinel2", length(dates)), 
+                      "Lat" = lat, "Lon" = lon)
 
-for (r in 1:length(ref_date)){
-  first_pass <-  start + ((start - ref_date[r]) %% 5)
-  overpasses <- seq.Date( as.Date(first_pass, '1970-01-01'), as.Date(stop, '1970-01-01'), by = 5) %>% as.data.frame()
-  dates <- rbind(dates, as.character.Date(overpasses)) %>% distinct()
+    output_table <- rbind(output_table, updating)
+  }
+
 }
 
-names(dates) <- "Dates"
+output_table <- output_table %>% distinct()
+output_table
+
