@@ -22,6 +22,10 @@ ls7 <- read.csv('Data/In/Landsat/landsat7_lookup.csv') %>% cbind("Satellite" = "
 #Used to select a table when toggling between satellites
 lookup_table <- list("Landsat8"=ls8,"Landsat7"=ls7)
 
+#Acquisition swath and mgrs tiles for Sentinel2
+PARSED <- st_read('Data/In/Sentinel/s2_swaths.shp', stringsAsFactors = FALSE)
+st_crs(PARSED) = 4326
+MGRS <- st_read('Data/In/Sentinel/sentinel2_tiles_world.shp', stringsAsFactors = FALSE)
 
 #Global variables. It will update with each map click and reset only when 'reset map' button is clicked
 global_table = data.frame()
@@ -173,6 +177,7 @@ server <- function(input, output, session){
     
     global_coords <<- rbind(global_coords, cbind("Long" = lon, "Lat" = lat)) %>% distinct()
     
+    #generateS2(lon, lat)
     generate(lon, lat, lookup_table[[input$satellite]])
     
   })
@@ -227,8 +232,76 @@ server <- function(input, output, session){
     
   })
   
+  #SENTINEL2: Updates map, global table, clobal coords given click with MGRS and swath data
+  generateS2 <- function(lon, lat){
+    
+    start <- input$dates[1] %>% as.Date() %>% as.numeric()
+    stop <- input$dates[2] %>% as.Date() 
+    
+    click <- cbind(lon, lat) %>% as.data.frame() %>% SpatialPoints() %>% st_as_sf(coords = c('lon','lat'))
+    st_crs(click) = 4326
+    
+    #Swaths and mgrs that contain click
+    swaths <- PARSED[st_intersects(click, PARSED, sparse = FALSE),]
+    mgrs <- MGRS[st_intersects(click, MGRS, sparse = FALSE),]
+    
+    #Swaths only cover land
+    if(is_empty(swaths$Overpass)){
+      output$helpText <- renderText("No images will be taken over selected region")
+      return(NULL)
+    }
+    
+    output_table <- data.frame()
+    
+    #For each MGRS tile
+    for (r in 1:length(mgrs$Name)){
+      
+      #Swaths that contain 90% of tile  
+      bool <- ((st_intersection(swaths, mgrs[r,]) %>% st_area()  %>% as.numeric() ) / (st_area(mgrs[r,]) %>% as.numeric())) >.9
+      
+      if(!any(bool))
+        next
+      
+      swath_dates <- swaths[bool,]$Overpass %>% as.Date() %>% as.numeric()
+      first_pass_within_range <- start + ((start - swath_dates) %% 5)
+      
+      #Patchwork fix for duplicate geometry in PARSED. FIX LATER!
+      first_pass_within_range <- first_pass_within_range[!(first_pass_within_range %% 5) %>% duplicated()]
+      
+      #For each distinct overpass
+      for (c in 1:length(first_pass_within_range)){
+        
+        from <- first_pass_within_range[c] %>% as.Date('1970-01-01')
+        dates <- seq.Date(from, stop, by = 5) %>% as.character()
+        output_table <- rbind(output_table, cbind("Dates" = dates, "Path" = NA, "Row" = NA, "MGRS" = mgrs[r,]$Name,
+                                                  "Lat" = lat, "Lon" = lon, "Satellite" = rep("Sentinel2", length(dates)))) 
+        
+      }
+      
+    }
+    
+    if(is_empty(output_table))
+      return()
+    
+    output_table <- output_table %>% distinct()
+    update_output(output_table)
+    
+    #Update the map
+    leafletProxy("map") %>%
+      addTiles(group = "Default") %>%
+      addProviderTiles(providers$Esri.WorldImagery, group = "Satellite") %>%
+      addProviderTiles(providers$CartoDB.VoyagerOnlyLabels, group = "Satellite") %>%
+      setView(lng = lon , lat = lat, zoom = 6) %>%
+      addPolygons(
+        data = mgrs, color = 'red', weight = 2, label = paste0('ID: ', mgrs$Name),
+        highlightOptions = highlightOptions(color = 'white', weight = 3, bringToFront = TRUE)) %>%
+      addLayersControl(
+        baseGroups = c("Satellite", "Default"),
+        options = layersControlOptions(collapsed = TRUE))
+    
+  }
   
-  #Updates map with tiles and global table with data given coordinates of a click
+  #LANDSAT7&8: Updates map with tiles and global table with data given coordinates of a click
   generate <- function(lon, lat, ref){
     
     ##Here, WRS variable can be replaced with the list of checked boxes
@@ -281,10 +354,18 @@ server <- function(input, output, session){
       if(is_empty(dates))
         next
       
-      updating_table <- rbind(updating_table, cbind("Dates" = dates, "Path" = paths[r], "Row" = rows[r], "Lat" = round(lat,5), "Long" = round(lon,5), "Satellite" = input$satellite ))
+      updating_table <- rbind(updating_table, cbind("Dates" = dates, "Path" = paths[r], "Row" = rows[r], "MGRS" = NA,
+                                                    "Lat" = round(lat,5), "Long" = round(lon,5), "Satellite" = input$satellite ))
     }
+   
+    update_output(updating_table)
     
+  }
+   
+  #Updates table 
+  update_output <- function(updating_table){
     
+  
     if(is_empty(updating_table)){
       output$helpText <- renderText("No overpass in selected date range")
       return(NULL)
@@ -297,7 +378,7 @@ server <- function(input, output, session){
     #Renders distinct output
     if(!is_empty(global_table)){
       global_table <<- rbind(updating_table, global_table) %>% as.data.frame()
-      x <- duplicated(global_table[,1:3])
+      x <- duplicated(global_table)
       global_table <<- global_table[!x,]
     }
     
