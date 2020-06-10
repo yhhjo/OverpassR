@@ -10,6 +10,8 @@ library(lubridate)
 library(DT)
 library(plyr)
 library(dplyr)
+library(lwgeom)
+
 
 #Read the wrs tiles 
 wrs <- st_read('Data/In/Landsat/wrs2_asc_desc.shp')
@@ -85,7 +87,7 @@ ui <- fluidPage(
                          
                          tags$td(style = "width: 12%"),
                          tags$td(style = "width: 25%",
-                                 selectInput("satellite",label = "Satellite:",choices = c("Landsat7", "Landsat8"))
+                                 selectInput("satellite",label = "Satellite:",choices = c("Landsat7", "Landsat8", "Sentinel2"))
                          )
                        ) 
             ) 
@@ -143,7 +145,13 @@ server <- function(input, output, session){
     }
     
     global_coords <<- rbind(global_coords, cbind("Long" = lon, "Lat" = lat)) %>% distinct()
+    
+    if(input$satellite == "Sentinel2")
+      generateS2(lon, lat)
+    
+    else{
     generate(lon, lat, lookup_table[[input$satellite]])
+    }
     
   })
   
@@ -155,12 +163,22 @@ server <- function(input, output, session){
       return()
     
     #Clear DT and global table to be re-populated
-    output$table <- renderDT(NULL)
-    global_table <<- data.frame()
+
+global_table <<- data.frame()
     
     leafletProxy("map") %>% clearShapes()
-    for(row in 1:nrow(global_coords)){
-      generate(global_coords$Long[row], global_coords$Lat[row], lookup_table[[input$satellite]])
+    
+    if(input$satellite == "Sentinel2"){
+      for (row in 1:nrow(global_coords)){
+        generateS2(global_coords$Long[row], global_coords$Lat[row])
+      }
+    }
+    
+    #Landsat
+    else {
+      for(row in 1:nrow(global_coords)){
+        generate(global_coords$Long[row], global_coords$Lat[row], lookup_table[[input$satellite]])
+      }
     }
     
   })
@@ -177,8 +195,12 @@ server <- function(input, output, session){
     
     global_coords <<- rbind(global_coords, cbind("Long" = lon, "Lat" = lat)) %>% distinct()
     
-    #generateS2(lon, lat)
-    generate(lon, lat, lookup_table[[input$satellite]])
+    if(input$satellite == "Sentinel2")
+      generateS2(lon, lat)
+   
+    else{
+      generate(lon, lat, lookup_table[[input$satellite]])
+    }
     
   })
   
