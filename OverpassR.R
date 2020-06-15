@@ -163,9 +163,7 @@ server <- function(input, output, session){
       return()
     
     #Clear DT and global table to be re-populated
-
-global_table <<- data.frame()
-    
+    global_table <<- data.frame()
     leafletProxy("map") %>% clearShapes()
     
     if(input$satellite == "Sentinel2"){
@@ -238,6 +236,7 @@ global_table <<- data.frame()
     else{
       output$helpText <- renderText({})
     }
+    
     #Ignore if this is NOT a retroactive click
     if(is_empty(global_coords))
       return()
@@ -248,8 +247,21 @@ global_table <<- data.frame()
     leafletProxy("map") %>% clearShapes()
     
     
-    for(row in 1:nrow(global_coords)){
-      generate(global_coords$Long[row], global_coords$Lat[row], lookup_table[[input$satellite]])
+    #Sentinel 
+    if(input$satellite == "Sentinel2"){
+      
+      for (row in 1:nrow(global_coords)){
+        generateS2(global_coords$Long[row], global_coords$Lat[row])
+      }
+    }
+    
+    
+    #Landsat
+    else {
+      
+      for(row in 1:nrow(global_coords)){
+        generate(global_coords$Long[row], global_coords$Lat[row], lookup_table[[input$satellite]])
+      }
     }
     
   })
@@ -259,54 +271,14 @@ global_table <<- data.frame()
     
     start <- input$dates[1] %>% as.Date() %>% as.numeric()
     stop <- input$dates[2] %>% as.Date() 
-    
     click <- cbind(lon, lat) %>% as.data.frame() %>% SpatialPoints() %>% st_as_sf(coords = c('lon','lat'))
     st_crs(click) = 4326
     
     #Swaths and mgrs that contain click
     swaths <- PARSED[st_intersects(click, PARSED, sparse = FALSE),]
     mgrs <- MGRS[st_intersects(click, MGRS, sparse = FALSE),]
-    
-    #Swaths only cover land
-    if(is_empty(swaths$Overpass)){
-      output$helpText <- renderText("No images will be taken over selected region")
-      return(NULL)
-    }
-    
     output_table <- data.frame()
     
-    #For each MGRS tile
-    for (r in 1:length(mgrs$Name)){
-      
-      #Swaths that contain 90% of tile  
-      bool <- ((st_intersection(swaths, mgrs[r,]) %>% st_area()  %>% as.numeric() ) / (st_area(mgrs[r,]) %>% as.numeric())) >.9
-      
-      if(!any(bool))
-        next
-      
-      swath_dates <- swaths[bool,]$Overpass %>% as.Date() %>% as.numeric()
-      first_pass_within_range <- start + ((start - swath_dates) %% 5)
-      
-      #Patchwork fix for duplicate geometry in PARSED. FIX LATER!
-      first_pass_within_range <- first_pass_within_range[!(first_pass_within_range %% 5) %>% duplicated()]
-      
-      #For each distinct overpass
-      for (c in 1:length(first_pass_within_range)){
-        
-        from <- first_pass_within_range[c] %>% as.Date('1970-01-01')
-        dates <- seq.Date(from, stop, by = 5) %>% as.character()
-        output_table <- rbind(output_table, cbind("Dates" = dates, "Path" = NA, "Row" = NA, "MGRS" = mgrs[r,]$Name,
-                                                  "Lat" = lat, "Lon" = lon, "Satellite" = rep("Sentinel2", length(dates)))) 
-        
-      }
-      
-    }
-    
-    if(is_empty(output_table))
-      return()
-    
-    output_table <- output_table %>% distinct()
-    update_output(output_table)
     
     #Update the map
     leafletProxy("map") %>%
@@ -320,6 +292,47 @@ global_table <<- data.frame()
       addLayersControl(
         baseGroups = c("Satellite", "Default"),
         options = layersControlOptions(collapsed = TRUE))
+    
+    #Swaths only cover land
+    if(is_empty(swaths$Overpass)){
+      output$helpText <- renderText("No images will be taken over selected region")
+      return(NULL)
+    }
+    
+    
+    #For each MGRS tile
+    for (r in 1:length(mgrs$Name)){
+      
+      #Swaths that contain 90% of tile  
+      bool <- ((st_intersection(swaths, mgrs[r,]) %>% st_area()  %>% as.numeric() ) / (st_area(mgrs[r,]) %>% as.numeric())) >.9
+      
+      if(!any(bool))
+        next
+      
+      swath_dates <- swaths[bool,]$Overpass %>% as.Date() %>% as.numeric()
+      first_pass_within_range <- start + ((swath_dates - start) %% 5)
+      
+      #Patchwork fix for duplicate geometry in PARSED. FIX LATER!
+      first_pass_within_range <- first_pass_within_range[!(first_pass_within_range %% 5) %>% duplicated()]
+      
+      #For each distinct overpass
+      for (c in 1:length(first_pass_within_range)){
+        from <- first_pass_within_range[c] %>% as.Date('1970-01-01')
+        
+        if(stop-from<0)
+          next
+        
+        dates <- seq.Date(from, stop, by = 5) %>% as.character()
+        output_table <- rbind(output_table, cbind("Dates" = dates, "Path" = NA, "Row" = NA, "MGRS" = mgrs[r,]$Name,
+                                                  "Lat" = lat, "Lon" = lon, "Satellite" = "Sentinel2")) 
+      }
+    }
+  
+    if(is_empty(output_table))
+      return()
+    
+    output_table <- output_table %>% distinct()
+    update_output(output_table)
     
   }
   
@@ -396,21 +409,20 @@ global_table <<- data.frame()
     else
       output$helpText <- renderText({})
     
-    
     #Renders distinct output
     if(!is_empty(global_table)){
       global_table <<- rbind(updating_table, global_table) %>% as.data.frame()
-      x <- duplicated(global_table)
-      global_table <<- global_table[!x,]
+      global_table <<- global_table[!duplicated(global_table[,1:4]),]
     }
     
     else
       global_table <<- updating_table %>% as.data.frame()
     
     #Display table
-    output$table <<- renderDT(
-      global_table, rownames = NULL, options = list(paging = FALSE, searching = FALSE, info = FALSE) 
-    )
+    output$table <<- renderDT( datatable(global_table, 
+      rownames = NULL, options = list(paging = FALSE, searching = FALSE, info = FALSE)) %>%
+      formatRound(c(5:6),2) )
+
     
   }
   
