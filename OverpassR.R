@@ -10,7 +10,6 @@ library(lubridate)
 library(DT)
 library(plyr)
 library(dplyr)
-library(lwgeom)
 
 
 #Read the wrs tiles 
@@ -23,6 +22,7 @@ ls7 <- read.csv('Data/In/Landsat/landsat7_lookup.csv') %>% cbind("Satellite" = "
 
 #Used to select a table when toggling between satellites
 lookup_table <- list("Landsat8"=ls8,"Landsat7"=ls7)
+choices <- c("ls7","ls8","s2")
 
 #Acquisition swath and mgrs tiles for Sentinel2
 PARSED <- st_read('Data/In/Sentinel/s2_swaths.shp', stringsAsFactors = FALSE)
@@ -87,7 +87,9 @@ ui <- fluidPage(
                          
                          tags$td(style = "width: 12%"),
                          tags$td(style = "width: 25%",
-                                 selectInput("satellite",label = "Satellite:",choices = c("Landsat7", "Landsat8", "Sentinel2"))
+                                 checkboxGroupInput("satellite",label = "Satellite:",
+                                                    choices = c("Landsat7" = "ls7", "Landsat8" = "ls8", "Sentinel2" = "s2"),
+                                                    selected = "ls7")
                          )
                        ) 
             ) 
@@ -146,12 +148,15 @@ server <- function(input, output, session){
     
     global_coords <<- rbind(global_coords, cbind("Long" = lon, "Lat" = lat)) %>% distinct()
     
-    if(input$satellite == "Sentinel2")
+    
+    if(any(input$satellite == "s2"))
       generateS2(lon, lat)
     
-    else{
-    generate(lon, lat, lookup_table[[input$satellite]])
-    }
+    if(any(input$satellite == "ls7"))
+      generate(lon, lat, ls7)
+    
+    if(any(input$satellite == "ls8"))
+      generate(lon, lat, ls8)
     
   })
   
@@ -162,20 +167,28 @@ server <- function(input, output, session){
     if(is_empty(global_coords))
       return()
     
-    #Clear DT and global table to be re-populated
+    ##Clear DT and global table to be re-populated
     global_table <<- data.frame()
+    
     leafletProxy("map") %>% clearShapes()
     
-    if(input$satellite == "Sentinel2"){
-      for (row in 1:nrow(global_coords)){
-        generateS2(global_coords$Long[row], global_coords$Lat[row])
+    #More efficient way of coding the following?
+    if(any(input$satellite == "ls7")){
+      for(row in 1:nrow(global_coords)){
+        generate(global_coords$Long[row], global_coords$Lat[row], ls7)
       }
     }
     
-    #Landsat
-    else {
+    if(any(input$satellite == "ls8")){
       for(row in 1:nrow(global_coords)){
-        generate(global_coords$Long[row], global_coords$Lat[row], lookup_table[[input$satellite]])
+        generate(global_coords$Long[row], global_coords$Lat[row], ls8)
+      }
+    }
+    
+    
+    if(any(input$satellite == "s2")){
+      for (row in 1:nrow(global_coords)){
+        generateS2(global_coords$Long[row], global_coords$Lat[row])
       }
     }
     
@@ -193,12 +206,14 @@ server <- function(input, output, session){
     
     global_coords <<- rbind(global_coords, cbind("Long" = lon, "Lat" = lat)) %>% distinct()
     
-    if(input$satellite == "Sentinel2")
+    if(any(input$satellite == "s2"))
       generateS2(lon, lat)
-   
-    else{
-      generate(lon, lat, lookup_table[[input$satellite]])
-    }
+    
+    if(any(input$satellite == "ls7"))
+      generate(lon, lat, ls7)
+    
+    if(any(input$satellite == "ls8"))
+      generate(lon, lat, ls8)
     
   })
   
@@ -246,22 +261,14 @@ server <- function(input, output, session){
     global_table <<- data.frame()
     leafletProxy("map") %>% clearShapes()
     
-    
-    #Sentinel 
-    if(input$satellite == "Sentinel2"){
+    for(row in 1:nrow(global_coords)){
       
-      for (row in 1:nrow(global_coords)){
+      if(any(input$satellite == "s2"))
         generateS2(global_coords$Long[row], global_coords$Lat[row])
-      }
-    }
-    
-    
-    #Landsat
-    else {
-      
-      for(row in 1:nrow(global_coords)){
-        generate(global_coords$Long[row], global_coords$Lat[row], lookup_table[[input$satellite]])
-      }
+      if(any(input$satellite == "ls7"))
+        generate(global_coords$Long[row], global_coords$Lat[row], ls7)
+      if(any(input$satellite == "ls8"))
+        generate(global_coords$Long[row], global_coords$Lat[row], ls8)
     }
     
   })
@@ -270,7 +277,7 @@ server <- function(input, output, session){
   generateS2 <- function(lon, lat){
     
     start <- input$dates[1] %>% as.Date() %>% as.numeric()
-    stop <- input$dates[2] %>% as.Date() 
+    stop <- input$dates[2] %>% as.Date() %>% as.numeric()
     click <- cbind(lon, lat) %>% as.data.frame() %>% SpatialPoints() %>% st_as_sf(coords = c('lon','lat'))
     st_crs(click) = 4326
     
@@ -300,34 +307,13 @@ server <- function(input, output, session){
     }
     
     
-    #For each MGRS tile
-    for (r in 1:length(mgrs$Name)){
-      
-      #Swaths that contain 90% of tile  
-      bool <- ((st_intersection(swaths, mgrs[r,]) %>% st_area()  %>% as.numeric() ) / (st_area(mgrs[r,]) %>% as.numeric())) >.9
-      
-      if(!any(bool))
-        next
-      
-      swath_dates <- swaths[bool,]$Overpass %>% as.Date() %>% as.numeric()
-      first_pass_within_range <- start + ((swath_dates - start) %% 5)
-      
-      #Patchwork fix for duplicate geometry in PARSED. FIX LATER!
-      first_pass_within_range <- first_pass_within_range[!(first_pass_within_range %% 5) %>% duplicated()]
-      
-      #For each distinct overpass
-      for (c in 1:length(first_pass_within_range)){
-        from <- first_pass_within_range[c] %>% as.Date('1970-01-01')
-        
-        if(stop-from<0)
-          next
-        
-        dates <- seq.Date(from, stop, by = 5) %>% as.character()
-        output_table <- rbind(output_table, cbind("Dates" = dates, "Path" = NA, "Row" = NA, "MGRS" = mgrs[r,]$Name,
-                                                  "Lat" = lat, "Lon" = lon, "Satellite" = "Sentinel2")) 
-      }
-    }
-  
+    within_range <- c(start + ((swaths$Overpass %>% as.Date() %>% as.numeric()  - start) %% 5) %>% unique())
+    all_dates <- c(sapply(within_range, function(x) {seq(x, stop, by = 5) })) %>% unlist() %>% as.Date('1970-01-01') %>% as.character()
+    
+    df <- merge(all_dates, mgrs$Name)
+    names(df) <- c("Dates", "MGRS")
+    output_table <- cbind(df, "Path" = NA, "Row" = NA, "Lat" = lat, "Lon" = lon, "Satellite" = "Sentinel2")
+    
     if(is_empty(output_table))
       return()
     
@@ -369,17 +355,12 @@ server <- function(input, output, session){
     
     #Create range of dates from start - end
     range <- start_date:end_date %>% as.Date('1970-01-01') %>% as.character()
-    
-    #Find a known start date for the cycle
     CYCLE_1_REFERENCE <- ref$Cycle_Start[1] %>% as.Date() %>% as.numeric()
-    
-    #Find 'start date's' cycle 
     start_date_cycle <- (start_date - CYCLE_1_REFERENCE) %% 16 + 1
     
     #Lookup table where every date in rnge has corresponding cycle
     table <- cbind("Date" = range, "Cycle" = getCycles(1, 16, length(range), 
                                                        start_date_cycle - 1 )) %>% as.data.frame()
-    
     updating_table <- NULL
     
     for(r in 1:length(paths)){
@@ -390,17 +371,15 @@ server <- function(input, output, session){
         next
       
       updating_table <- rbind(updating_table, cbind("Dates" = dates, "Path" = paths[r], "Row" = rows[r], "MGRS" = NA,
-                                                    "Lat" = round(lat,5), "Long" = round(lon,5), "Satellite" = input$satellite ))
+                                                    "Lat" = round(lat,5), "Lon" = round(lon,5), "Satellite" = (ref$Satellite[[1]] %>% as.character()) ))
     }
-   
     update_output(updating_table)
-    
   }
-   
+  
   #Updates table 
   update_output <- function(updating_table){
     
-  
+    
     if(is_empty(updating_table)){
       output$helpText <- renderText("No overpass in selected date range")
       return(NULL)
@@ -420,9 +399,9 @@ server <- function(input, output, session){
     
     #Display table
     output$table <<- renderDT( datatable(global_table, 
-      rownames = NULL, options = list(paging = FALSE, searching = FALSE, info = FALSE)) %>%
-      formatRound(c(5:6),2) )
-
+                                         rownames = NULL, options = list(paging = FALSE, searching = FALSE, info = FALSE)) %>%
+                                 formatRound(c(5:6),2) )
+    
     
   }
   
