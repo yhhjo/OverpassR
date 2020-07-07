@@ -10,7 +10,6 @@ library(lubridate)
 library(DT)
 library(plyr)
 library(dplyr)
-library(lwgeom)
 
 
 #Read the wrs tiles 
@@ -43,6 +42,7 @@ ui <- fluidPage(
   fixedRow(
     column(12, offset = 2,
            mainPanel(
+             
              "This website facilitates the planning of field work that wants to incorporate remote sensing into their study design.
                      Select your preferred satellite and click on the map or manually enter study site coordinates to see when the next satellite
                      overpass will occur for the selected area. For extended periods, enter a date range to extract all overpasses within the given time period.
@@ -65,40 +65,32 @@ ui <- fluidPage(
     ) 
   ),
   
-  #Upper menu with dates, coord search, and satellite dropdown
-  wellPanel(class = "col-md-11.5", style = "margin: 20px 10px 20px 10px",
-            tags$table(id = "inputs-table",style = "width: 100%",
-                       tags$tr(
-                         tags$td(style = "width: 10%",
-                                 textInput("lat",label = "Coordinates:", value = "", placeholder = "Lat")
-                         ),
-                         tags$td(style = "width: 10%",
-                                 textInput("lon", label = NULL ,value = "", placeholder = "Lon")
-                         ),
-                         tags$td(
-                           style = "width: 5%",
-                           div(class = "form-group shiny-input-container",
-                               actionButton("find", label = "Find"))
-                         ),
-                         tags$td(style = "width: 8%"),
-                         tags$td( style = "width: 33%; text-align: center",
-                                  dateRangeInput("dates", "Date range:", start = Sys.Date(), end = Sys.Date() + 16),
-                                  span(textOutput('helpText'), style = "color:red")
-                         ),
-                         
-                         tags$td(style = "width: 12%"),
-                         tags$td(style = "width: 25%",
-                                 checkboxGroupInput("satellite",label = "Satellite:",
-                                                    choices = c("Landsat7" = "ls7", "Landsat8" = "ls8", "Sentinel2" = "s2"),
-                                                    selected = "ls7")
-                         )
-                       ) 
-            ) 
-  ), 
   
-  wellPanel(
-    leafletOutput('map', width = '100%', height = 550),
+  tags$table(id = "inputs-table",style = "width: 100%",
+             tags$td(style = "width: 80%",
+                     leafletOutput('map', height = 550)
+             ),
+             
+             tags$td(style = "width: 20",
+                     wellPanel(class = "col-md-11.5", style = "margin: 20px 10px 20px 10px",
+                               
+                               
+                               checkboxGroupInput("satellite",label = "Satellite:",
+                                                  choices = c("Landsat7" = "ls7", "Landsat8" = "ls8", "Sentinel2" = "s2"),
+                                                  selected = "ls7"),
+                               
+                               textInput("lat",label = "Coordinates:", value = "", placeholder = "Lat"),
+                               textInput("lon", label = NULL ,value = "", placeholder = "Lon"),
+                               div(class = "form-group shiny-input-container",
+                                   actionButton("find", label = "Find")),
+                               dateRangeInput("dates", "Date range:", start = Sys.Date(), end = Sys.Date() + 16),
+                               span(textOutput('helpText'), style = "color:red"),
+                     )
+             )
   ),
+  
+  
+  
   
   tags$table(
     tags$tr(
@@ -112,7 +104,10 @@ ui <- fluidPage(
   
   DTOutput('table')
   
-)#End of ui
+)
+
+#End UI
+
 
 
 
@@ -278,7 +273,7 @@ server <- function(input, output, session){
   generateS2 <- function(lon, lat){
     
     start <- input$dates[1] %>% as.Date() %>% as.numeric()
-    stop <- input$dates[2] %>% as.Date() 
+    stop <- input$dates[2] %>% as.Date() %>% as.numeric()
     click <- cbind(lon, lat) %>% as.data.frame() %>% SpatialPoints() %>% st_as_sf(coords = c('lon','lat'))
     st_crs(click) = 4326
     
@@ -308,33 +303,12 @@ server <- function(input, output, session){
     }
     
     
-    #For each MGRS tile
-    for (r in 1:length(mgrs$Name)){
-      
-      #Swaths that contain 90% of tile  
-      bool <- ((st_intersection(swaths, mgrs[r,]) %>% st_area()  %>% as.numeric() ) / (st_area(mgrs[r,]) %>% as.numeric())) >.9
-      
-      if(!any(bool))
-        next
-      
-      swath_dates <- swaths[bool,]$Overpass %>% as.Date() %>% as.numeric()
-      first_pass_within_range <- start + ((swath_dates - start) %% 5)
-      
-      #Patchwork fix for duplicate geometry in PARSED. FIX LATER!
-      first_pass_within_range <- first_pass_within_range[!(first_pass_within_range %% 5) %>% duplicated()]
-      
-      #For each distinct overpass
-      for (c in 1:length(first_pass_within_range)){
-        from <- first_pass_within_range[c] %>% as.Date('1970-01-01')
-        
-        if(stop-from<0)
-          next
-        
-        dates <- seq.Date(from, stop, by = 5) %>% as.character()
-        output_table <- rbind(output_table, cbind("Dates" = dates, "Path" = NA, "Row" = NA, "MGRS" = mgrs[r,]$Name,
-                                                  "Lat" = lat, "Lon" = lon, "Satellite" = "Sentinel2")) 
-      }
-    }
+    within_range <- c(start + ((swaths$Overpass %>% as.Date() %>% as.numeric()  - start) %% 5) %>% unique())
+    all_dates <- c(sapply(within_range, function(x) {seq(x, stop, by = 5) })) %>% unlist() %>% as.Date('1970-01-01') %>% as.character()
+    
+    df <- merge(all_dates, mgrs$Name)
+    names(df) <- c("Dates", "MGRS")
+    output_table <- cbind(df, "Path" = NA, "Row" = NA, "Lat" = lat, "Lon" = lon, "Satellite" = "Sentinel2")
     
     if(is_empty(output_table))
       return()
@@ -377,17 +351,12 @@ server <- function(input, output, session){
     
     #Create range of dates from start - end
     range <- start_date:end_date %>% as.Date('1970-01-01') %>% as.character()
-    
-    #Find a known start date for the cycle
     CYCLE_1_REFERENCE <- ref$Cycle_Start[1] %>% as.Date() %>% as.numeric()
-    
-    #Find 'start date's' cycle 
     start_date_cycle <- (start_date - CYCLE_1_REFERENCE) %% 16 + 1
     
     #Lookup table where every date in rnge has corresponding cycle
     table <- cbind("Date" = range, "Cycle" = getCycles(1, 16, length(range), 
                                                        start_date_cycle - 1 )) %>% as.data.frame()
-    
     updating_table <- NULL
     
     for(r in 1:length(paths)){
@@ -400,9 +369,7 @@ server <- function(input, output, session){
       updating_table <- rbind(updating_table, cbind("Dates" = dates, "Path" = paths[r], "Row" = rows[r], "MGRS" = NA,
                                                     "Lat" = round(lat,5), "Lon" = round(lon,5), "Satellite" = (ref$Satellite[[1]] %>% as.character()) ))
     }
-    
     update_output(updating_table)
-    
   }
   
   #Updates table 
