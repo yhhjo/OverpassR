@@ -25,9 +25,9 @@ lookup_table <- list("Landsat8"=ls8,"Landsat7"=ls7)
 choices <- c("ls7","ls8","s2")
 
 #Acquisition swath and mgrs tiles for Sentinel2
-PARSED <- st_read('Data/In/Sentinel/s2_swaths.shp', stringsAsFactors = FALSE)
-st_crs(PARSED) = 4326
-MGRS <- st_read('Data/In/Sentinel/sentinel2_tiles_world.shp', stringsAsFactors = FALSE)
+MGRS <- st_read('Data/In/Sentinel/Relevant_MGRS.shp')
+SWATHS <- st_read('Data/In/Sentinel/Sentinel-2A_MP_ACQ_KML_20200716T120000_20200803T150000.kml', layer = "NOMINAL")
+SWATHS$Overpass <- as.Date(SWATHS$begin, format = "%y/%m/%d")
 
 #Global variables. It will update with each map click and reset only when 'reset map' button is clicked
 global_table = data.frame()
@@ -35,20 +35,25 @@ global_coords = data.frame()
 
 
 ui <- fluidPage( 
+  
+  tags$head(tags$style(HTML('
+      .modal.in .modal-dialog{
+        width:100%;
+        height:100%;
+        margin:0px;
+      }
+
+      .modal-content{
+        width:100%;
+        height:100%;
+      }
+    '))),
+  
+  
   fixedRow(
     column(4, offset = 5, titlePanel("OverpassR"))
   ),
   
-  fixedRow(
-    column(12, offset = 2,
-           mainPanel(
-             "This website facilitates the planning of field work that wants to incorporate remote sensing into their study design.
-                     Select your preferred satellite and click on the map or manually enter study site coordinates to see when the next satellite
-                     overpass will occur for the selected area. For extended periods, enter a date range to extract all overpasses within the given time period.
-                     The date information can be downloaded as a csv by clicking the 'Download' button at the bottom." 
-           )
-    )
-  ), 
   
   tags$head(
     tags$style(
@@ -119,6 +124,16 @@ server <- function(input, output, session){
   
   proxy_table = dataTableProxy('table')
   proxyMap <- leafletProxy("map")
+  
+  observeEvent(once = TRUE,ignoreNULL = FALSE, ignoreInit = FALSE, eventExpr = proxyMap, { 
+    # event will be called when histdata changes, which only happens once, when it is initially calculated
+    showModal(modalDialog(
+      h1('Welcome to OverpassR!'),
+      p("This is a beta version of a website aimed to help researchers incorporate remote sensing into their work. Select your preferred satellites and click
+                     and click on the map or manually enter study site coordinates to see satellite overpass information. The table can be downloaded as a csv
+                     by clicking the 'Download' button at the bottom. Click the 'Reset' button to clear all user input and start over." )
+    ))
+  })
   
   #Render map with base layers WorldImagery and Labels
   output$map <- renderLeaflet({
@@ -282,7 +297,7 @@ server <- function(input, output, session){
     st_crs(click) = 4326
     
     #Swaths and mgrs that contain click
-    swaths <- PARSED[st_intersects(click, PARSED, sparse = FALSE),]
+    swaths <- SWATHS[st_intersects(click, SWATHS, sparse = FALSE),]
     mgrs <- MGRS[st_intersects(click, MGRS, sparse = FALSE),]
     output_table <- data.frame()
     
@@ -302,12 +317,18 @@ server <- function(input, output, session){
     
     #Swaths only cover land
     if(is_empty(swaths$Overpass)){
-      output$helpText <- renderText("No images will be taken over selected region")
+      output$helpText <- renderText("Sentinel2 captures images over land. Some coordinates did not yield overpass information")
       return(NULL)
     }
     
-    
     within_range <- c(start + ((swaths$Overpass %>% as.Date() %>% as.numeric()  - start) %% 5) %>% unique())
+    
+    #Positive date range, but too narrow
+    if(any(within_range>stop)){
+      output$helpText <- renderText("Date range too narrow for some overpasses Try a range of at least 5 days.")
+      return(NULL)
+    }
+    
     all_dates <- c(sapply(within_range, function(x) {seq(x, stop, by = 5) })) %>% unlist() %>% as.Date('1970-01-01') %>% as.character()
     
     df <- merge(all_dates, mgrs$Name)
@@ -321,6 +342,8 @@ server <- function(input, output, session){
     update_output(output_table)
     
   }
+  
+  
   
   #LANDSAT7&8: Updates map with tiles and global table with data given coordinates of a click
   generate <- function(lon, lat, ref){
