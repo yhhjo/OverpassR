@@ -149,13 +149,15 @@ server <- function(input, output, session){
     
     leaflet(options = leafletOptions(minZoom = .75)) %>%
       setMaxBounds(lng1 = 180, lat1 = 90, lng2 = -180, lat2 = -90)%>%
-      addTiles(group = "Default") %>%
+      addTiles(group = "Standard")%>% 
       addProviderTiles(providers$Esri.WorldImagery, group = "Satellite") %>%
       addProviderTiles(providers$CartoDB.VoyagerOnlyLabels, group = "Satellite") %>%
+      addProviderTiles(providers$Esri.WorldPhysical, group = "Relief") %>%
+      addProviderTiles(providers$Esri.DeLorme, group = "Topographic")%>%
       setView(lat=10, lng=0, zoom=2)  %>%
       addLayersControl(
-        baseGroups = c("Satellite", "Default"),
-        options = layersControlOptions(collapsed = FALSE)
+        baseGroups = c("Satellite", "Standard", "Relief", "Topographic"),
+        options = layersControlOptions(collapsed = TRUE)
       )
   })
   
@@ -316,13 +318,14 @@ server <- function(input, output, session){
       addTiles(group = "Default") %>%
       addProviderTiles(providers$Esri.WorldImagery, group = "Satellite") %>%
       addProviderTiles(providers$CartoDB.VoyagerOnlyLabels, group = "Satellite") %>%
-      setView(lng = lon , lat = lat, zoom = 6) %>%
+      addProviderTiles(providers$Esri.WorldPhysical, group = "Relief") %>%
+      addProviderTiles(providers$Esri.DeLorme, group = "Topographic")%>%
       addMarkers(lng = lon, lat = lat, label = paste0('Lat ', round(lat,2), '; Lon: ', round(lon,2)))%>%
       addPolygons(
         data = mgrs, color = 'red', weight = 2, label = paste0('ID: ', mgrs$Name),
         highlightOptions = highlightOptions(color = 'white', weight = 3, bringToFront = TRUE)) %>%
       addLayersControl(
-        baseGroups = c("Satellite", "Default"),
+        baseGroups = c("Satellite", "Standard", "Relief", "Topographic"),
         options = layersControlOptions(collapsed = TRUE))
     
     #Swaths only cover land
@@ -369,12 +372,14 @@ server <- function(input, output, session){
       addTiles(group = "Default") %>%
       addProviderTiles(providers$Esri.WorldImagery, group = "Satellite") %>%
       addProviderTiles(providers$CartoDB.VoyagerOnlyLabels, group = "Satellite") %>%
+      addProviderTiles(providers$Esri.WorldPhysical, group = "Relief") %>%
+      addProviderTiles(providers$Esri.DeLorme, group = "Topographic")%>%
       addMarkers(lng = lon, lat = lat, label = paste0('Lat ', round(lat,2), '; Lon: ', round(lon,2)))%>%
       addPolygons(
         data = tile_shapes, color = 'blue', weight = 2, label = paste0('Path: ',paths,'; Row: ', rows),
         highlightOptions = highlightOptions(color = 'white', weight = 3, bringToFront = TRUE)) %>%
       addLayersControl(
-        baseGroups = c("Satellite", "Default"),
+        baseGroups = c("Satellite", "Standard", "Relief", "Topographic"),
         options = layersControlOptions(collapsed = TRUE))
     
     start_date <- input$dates[1] %>% as.numeric()
