@@ -101,7 +101,15 @@ ui <- fluidPage(
   ), 
   
   wellPanel(
-    leafletOutput('map', width = '100%', height = 550),
+    tags$table(id = "leaflet-table", style = "width: 100%",
+               tags$tr(
+                 tags$td(style = "width: 8%"),
+                 tags$td(style = "width: 84%",
+                         leafletOutput('map',height = 550)
+                 ),
+                 tags$td(style = "width: 8%")
+               )
+    )
   ),
   
   tags$table(
@@ -359,7 +367,6 @@ server <- function(input, output, session){
       addTiles(group = "Default") %>%
       addProviderTiles(providers$Esri.WorldImagery, group = "Satellite") %>%
       addProviderTiles(providers$CartoDB.VoyagerOnlyLabels, group = "Satellite") %>%
-      setView(lng = lon , lat = lat, zoom = 6) %>%
       addPolygons(
         data = tile_shapes, color = 'blue', weight = 2, label = paste0('Path: ',paths,'; Row: ', rows),
         highlightOptions = highlightOptions(color = 'white', weight = 3, bringToFront = TRUE)) %>%
@@ -422,7 +429,8 @@ server <- function(input, output, session){
     
     #Display table
     output$table <<- renderDT( datatable(global_table, 
-                                         rownames = NULL, options = list(paging = FALSE, searching = FALSE, info = FALSE)) %>%
+                                         rownames = NULL, options = list(paging = FALSE, searching = FALSE, info = FALSE, 
+                                                                         orderClasses = TRUE, order = list(0, 'asc'))) %>%
                                  formatRound(c(5:6),2) )
     
     
