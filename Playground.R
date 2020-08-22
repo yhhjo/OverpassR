@@ -10,7 +10,6 @@ library(lubridate)
 library(DT)
 library(plyr)
 library(dplyr)
-library(lwgeom)
 
 
 #Read the wrs tiles 
@@ -26,9 +25,9 @@ lookup_table <- list("Landsat8"=ls8,"Landsat7"=ls7)
 choices <- c("ls7","ls8","s2")
 
 #Acquisition swath and mgrs tiles for Sentinel2
-PARSED <- st_read('Data/In/Sentinel/s2_swaths.shp', stringsAsFactors = FALSE)
-st_crs(PARSED) = 4326
-MGRS <- st_read('Data/In/Sentinel/sentinel2_tiles_world.shp', stringsAsFactors = FALSE)
+MGRS <- st_read('Data/In/Sentinel/Relevant_MGRS.shp')
+SWATHS <- st_read('Data/In/Sentinel/Sentinel-2A_MP_ACQ_KML_20200716T120000_20200803T150000.kml', layer = "NOMINAL")
+SWATHS$Overpass <- as.Date(SWATHS$begin, format = "%y/%m/%d")
 
 #Global variables. It will update with each map click and reset only when 'reset map' button is clicked
 global_table = data.frame()
@@ -36,20 +35,25 @@ global_coords = data.frame()
 
 
 ui <- fluidPage( 
+  
+  tags$head(tags$style(HTML('
+      .modal.in .modal-dialog{
+        width:100%;
+        height:100%;
+        margin:0px;
+      }
+
+      .modal-content{
+        width:100%;
+        height:100%;
+      }
+    '))),
+  
+  
   fixedRow(
     column(4, offset = 5, titlePanel("OverpassR"))
   ),
   
-  fixedRow(
-    column(12, offset = 2,
-           mainPanel(
-             "This website facilitates the planning of field work that wants to incorporate remote sensing into their study design.
-                     Select your preferred satellite and click on the map or manually enter study site coordinates to see when the next satellite
-                     overpass will occur for the selected area. For extended periods, enter a date range to extract all overpasses within the given time period.
-                     The date information can be downloaded as a csv by clicking the 'Download' button at the bottom." 
-           )
-    )
-  ), 
   
   tags$head(
     tags$style(
@@ -97,7 +101,15 @@ ui <- fluidPage(
   ), 
   
   wellPanel(
-    leafletOutput('map', width = '100%', height = 550),
+    tags$table(id = "leaflet-table", style = "width: 100%",
+               tags$tr(
+                 tags$td(style = "width: 8%"),
+                 tags$td(style = "width: 84%",
+                         leafletOutput('map',height = 550)
+                 ),
+                 tags$td(style = "width: 8%")
+               )
+    )
   ),
   
   tags$table(
@@ -121,18 +133,31 @@ server <- function(input, output, session){
   proxy_table = dataTableProxy('table')
   proxyMap <- leafletProxy("map")
   
+  observeEvent(once = TRUE,ignoreNULL = FALSE, ignoreInit = FALSE, eventExpr = proxyMap, { 
+    # event will be called when histdata changes, which only happens once, when it is initially calculated
+    showModal(modalDialog(footer = modalButton("Go"),
+      h1('Welcome to OverpassR!'),
+      p("This is a beta version of a website aimed to help researchers incorporate remote sensing into their work. Select your preferred satellites and click 
+      on the map or manually enter study site coordinates to see satellite overpass information. The table can be downloaded as a csv
+      by clicking the 'Download' button at the bottom. The output table can be sorted by different columns--just click their header.
+      Click the 'Reset' button to clear all user input and start over. Please send bug reports or app suggestions to Andrew Buchanan at ajb28@live.unc.edu." )
+    ))
+  })
+  
   #Render map with base layers WorldImagery and Labels
   output$map <- renderLeaflet({
     
     leaflet(options = leafletOptions(minZoom = .75)) %>%
       setMaxBounds(lng1 = 180, lat1 = 90, lng2 = -180, lat2 = -90)%>%
-      addTiles(group = "Default") %>%
+      addTiles(group = "Standard")%>% 
       addProviderTiles(providers$Esri.WorldImagery, group = "Satellite") %>%
       addProviderTiles(providers$CartoDB.VoyagerOnlyLabels, group = "Satellite") %>%
+      addProviderTiles(providers$Esri.WorldPhysical, group = "Relief") %>%
+      addProviderTiles(providers$Esri.DeLorme, group = "Topographic")%>%
       setView(lat=10, lng=0, zoom=2)  %>%
       addLayersControl(
-        baseGroups = c("Satellite", "Default"),
-        options = layersControlOptions(collapsed = FALSE)
+        baseGroups = c("Satellite", "Standard", "Relief", "Topographic"),
+        options = layersControlOptions(collapsed = TRUE)
       )
   })
   
@@ -148,6 +173,7 @@ server <- function(input, output, session){
     }
     
     global_coords <<- rbind(global_coords, cbind("Long" = lon, "Lat" = lat)) %>% distinct()
+    
     
     if(any(input$satellite == "s2"))
       generateS2(lon, lat)
@@ -167,8 +193,7 @@ server <- function(input, output, session){
     if(is_empty(global_coords))
       return()
     
-    #Clear DT and global table to be re-populated
-    
+    ##Clear DT and global table to be re-populated
     global_table <<- data.frame()
     
     leafletProxy("map") %>% clearShapes()
@@ -185,7 +210,7 @@ server <- function(input, output, session){
         generate(global_coords$Long[row], global_coords$Lat[row], ls8)
       }
     }
-      
+    
     
     if(any(input$satellite == "s2")){
       for (row in 1:nrow(global_coords)){
@@ -215,6 +240,7 @@ server <- function(input, output, session){
     
     if(any(input$satellite == "ls8"))
       generate(lon, lat, ls8)
+    
   })
   
   
@@ -224,7 +250,7 @@ server <- function(input, output, session){
     if(is.null(input$refreshButton))
       return()
     
-    proxyMap%>% clearShapes()
+    proxyMap%>% clearShapes() %>% clearMarkers()
     output$helpText <- renderText({})
     updateDateRangeInput(session, "dates", "Date range:",
                          start = Sys.Date(), end = Sys.Date()+16)
@@ -251,6 +277,7 @@ server <- function(input, output, session){
     else{
       output$helpText <- renderText({})
     }
+    
     #Ignore if this is NOT a retroactive click
     if(is_empty(global_coords))
       return()
@@ -260,7 +287,6 @@ server <- function(input, output, session){
     global_table <<- data.frame()
     leafletProxy("map") %>% clearShapes()
     
-    
     for(row in 1:nrow(global_coords)){
       
       if(any(input$satellite == "s2"))
@@ -269,8 +295,6 @@ server <- function(input, output, session){
         generate(global_coords$Long[row], global_coords$Lat[row], ls7)
       if(any(input$satellite == "ls8"))
         generate(global_coords$Long[row], global_coords$Lat[row], ls8)
-      
-      
     }
     
   })
@@ -279,49 +303,50 @@ server <- function(input, output, session){
   generateS2 <- function(lon, lat){
     
     start <- input$dates[1] %>% as.Date() %>% as.numeric()
-    stop <- input$dates[2] %>% as.Date() 
-    
+    stop <- input$dates[2] %>% as.Date() %>% as.numeric()
     click <- cbind(lon, lat) %>% as.data.frame() %>% SpatialPoints() %>% st_as_sf(coords = c('lon','lat'))
     st_crs(click) = 4326
     
     #Swaths and mgrs that contain click
-    swaths <- PARSED[st_intersects(click, PARSED, sparse = FALSE),]
+    swaths <- SWATHS[st_intersects(click, SWATHS, sparse = FALSE),]
     mgrs <- MGRS[st_intersects(click, MGRS, sparse = FALSE),]
+    output_table <- data.frame()
+    
+    
+    #Update the map
+    leafletProxy("map") %>%
+      addTiles(group = "Default") %>%
+      addProviderTiles(providers$Esri.WorldImagery, group = "Satellite") %>%
+      addProviderTiles(providers$CartoDB.VoyagerOnlyLabels, group = "Satellite") %>%
+      addProviderTiles(providers$Esri.WorldPhysical, group = "Relief") %>%
+      addProviderTiles(providers$Esri.DeLorme, group = "Topographic")%>%
+      addMarkers(lng = lon, lat = lat, label = paste0('Lat ', round(lat,2), '; Lon: ', round(lon,2)))%>%
+      addPolygons(
+        data = mgrs, color = 'red', weight = 2, label = paste0('ID: ', mgrs$Name),
+        highlightOptions = highlightOptions(color = 'white', weight = 3, bringToFront = TRUE)) %>%
+      addLayersControl(
+        baseGroups = c("Satellite", "Standard", "Relief", "Topographic"),
+        options = layersControlOptions(collapsed = TRUE))
     
     #Swaths only cover land
     if(is_empty(swaths$Overpass)){
-      output$helpText <- renderText("No images will be taken over selected region")
+      output$helpText <- renderText("Sentinel2 captures images over land. Some coordinates did not yield overpass information")
       return(NULL)
     }
     
-    output_table <- data.frame()
+    within_range <- c(start + ((swaths$Overpass %>% as.Date() %>% as.numeric()  - start) %% 5) %>% unique())
     
-    #For each MGRS tile
-    for (r in 1:length(mgrs$Name)){
-      
-      #Swaths that contain 90% of tile  
-      bool <- ((st_intersection(swaths, mgrs[r,]) %>% st_area()  %>% as.numeric() ) / (st_area(mgrs[r,]) %>% as.numeric())) >.9
-      
-      if(!any(bool))
-        next
-      
-      swath_dates <- swaths[bool,]$Overpass %>% as.Date() %>% as.numeric()
-      first_pass_within_range <- start + ((start - swath_dates) %% 5)
-      
-      #Patchwork fix for duplicate geometry in PARSED. FIX LATER!
-      first_pass_within_range <- first_pass_within_range[!(first_pass_within_range %% 5) %>% duplicated()]
-      
-      #For each distinct overpass
-      for (c in 1:length(first_pass_within_range)){
-        
-        from <- first_pass_within_range[c] %>% as.Date('1970-01-01')
-        dates <- seq.Date(from, stop, by = 5) %>% as.character()
-        output_table <- rbind(output_table, cbind("Dates" = dates, "Path" = NA, "Row" = NA, "MGRS" = mgrs[r,]$Name,
-                                                  "Lat" = lat, "Lon" = lon, "Satellite" = rep("Sentinel2", length(dates)))) 
-        
-      }
-      
+    #Positive date range, but too narrow
+    if(any(within_range>stop)){
+      output$helpText <- renderText("Date range too narrow for some overpasses Try a range of at least 5 days.")
+      return(NULL)
     }
+    
+    all_dates <- c(sapply(within_range, function(x) {seq(x, stop, by = 5) })) %>% unlist() %>% as.Date('1970-01-01') %>% as.character()
+    
+    df <- merge(all_dates, mgrs$Name)
+    names(df) <- c("Dates", "MGRS")
+    output_table <- cbind(df, "Path" = NA, "Row" = NA, "Lat" = lat, "Lon" = lon, "Satellite" = "Sentinel2")
     
     if(is_empty(output_table))
       return()
@@ -329,20 +354,9 @@ server <- function(input, output, session){
     output_table <- output_table %>% distinct()
     update_output(output_table)
     
-    #Update the map
-    leafletProxy("map") %>%
-      addTiles(group = "Default") %>%
-      addProviderTiles(providers$Esri.WorldImagery, group = "Satellite") %>%
-      addProviderTiles(providers$CartoDB.VoyagerOnlyLabels, group = "Satellite") %>%
-      setView(lng = lon , lat = lat, zoom = 6) %>%
-      addPolygons(
-        data = mgrs, color = 'red', weight = 2, label = paste0('ID: ', mgrs$Name),
-        highlightOptions = highlightOptions(color = 'white', weight = 3, bringToFront = TRUE)) %>%
-      addLayersControl(
-        baseGroups = c("Satellite", "Default"),
-        options = layersControlOptions(collapsed = TRUE))
-    
   }
+  
+  
   
   #LANDSAT7&8: Updates map with tiles and global table with data given coordinates of a click
   generate <- function(lon, lat, ref){
@@ -358,12 +372,14 @@ server <- function(input, output, session){
       addTiles(group = "Default") %>%
       addProviderTiles(providers$Esri.WorldImagery, group = "Satellite") %>%
       addProviderTiles(providers$CartoDB.VoyagerOnlyLabels, group = "Satellite") %>%
-      setView(lng = lon , lat = lat, zoom = 6) %>%
+      addProviderTiles(providers$Esri.WorldPhysical, group = "Relief") %>%
+      addProviderTiles(providers$Esri.DeLorme, group = "Topographic")%>%
+      addMarkers(lng = lon, lat = lat, label = paste0('Lat ', round(lat,2), '; Lon: ', round(lon,2)))%>%
       addPolygons(
         data = tile_shapes, color = 'blue', weight = 2, label = paste0('Path: ',paths,'; Row: ', rows),
         highlightOptions = highlightOptions(color = 'white', weight = 3, bringToFront = TRUE)) %>%
       addLayersControl(
-        baseGroups = c("Satellite", "Default"),
+        baseGroups = c("Satellite", "Standard", "Relief", "Topographic"),
         options = layersControlOptions(collapsed = TRUE))
     
     start_date <- input$dates[1] %>% as.numeric()
@@ -377,17 +393,12 @@ server <- function(input, output, session){
     
     #Create range of dates from start - end
     range <- start_date:end_date %>% as.Date('1970-01-01') %>% as.character()
-    
-    #Find a known start date for the cycle
     CYCLE_1_REFERENCE <- ref$Cycle_Start[1] %>% as.Date() %>% as.numeric()
-    
-    #Find 'start date's' cycle 
     start_date_cycle <- (start_date - CYCLE_1_REFERENCE) %% 16 + 1
     
     #Lookup table where every date in rnge has corresponding cycle
     table <- cbind("Date" = range, "Cycle" = getCycles(1, 16, length(range), 
                                                        start_date_cycle - 1 )) %>% as.data.frame()
-    
     updating_table <- NULL
     
     for(r in 1:length(paths)){
@@ -398,11 +409,9 @@ server <- function(input, output, session){
         next
       
       updating_table <- rbind(updating_table, cbind("Dates" = dates, "Path" = paths[r], "Row" = rows[r], "MGRS" = NA,
-                                                    "Lat" = round(lat,5), "Long" = round(lon,5), "Satellite" =  as.character(ref$Satellite[[1]]) ))
+                                                    "Lat" = round(lat,5), "Lon" = round(lon,5), "Satellite" = (ref$Satellite[[1]] %>% as.character()) ))
     }
-    
     update_output(updating_table)
-    
   }
   
   #Updates table 
@@ -417,21 +426,21 @@ server <- function(input, output, session){
     else
       output$helpText <- renderText({})
     
-    
     #Renders distinct output
     if(!is_empty(global_table)){
       global_table <<- rbind(updating_table, global_table) %>% as.data.frame()
-      x <- duplicated(global_table)
-      global_table <<- global_table[!x,]
+      global_table <<- global_table[!duplicated(global_table[,1:4]),]
     }
     
     else
       global_table <<- updating_table %>% as.data.frame()
     
     #Display table
-    output$table <<- renderDT(
-      global_table, rownames = NULL, options = list(paging = FALSE, searching = FALSE, info = FALSE) 
-    )
+    output$table <<- renderDT( datatable(global_table, 
+                                         rownames = NULL, options = list(paging = FALSE, searching = FALSE, info = FALSE, 
+                                                                         orderClasses = TRUE, order = list(0, 'asc'))) %>%
+                                 formatRound(c(5:6),2) )
+    
     
   }
   
