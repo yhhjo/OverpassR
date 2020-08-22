@@ -135,11 +135,12 @@ server <- function(input, output, session){
   
   observeEvent(once = TRUE,ignoreNULL = FALSE, ignoreInit = FALSE, eventExpr = proxyMap, { 
     # event will be called when histdata changes, which only happens once, when it is initially calculated
-    showModal(modalDialog(
-      h1('Welcome to OverpassR!'),
-      p("This is a beta version of a website aimed to help researchers incorporate remote sensing into their work. Select your preferred satellites and click
-                     and click on the map or manually enter study site coordinates to see satellite overpass information. The table can be downloaded as a csv
-                     by clicking the 'Download' button at the bottom. Click the 'Reset' button to clear all user input and start over." )
+    showModal(modalDialog(footer = modalButton("Go"),
+                          h1('Welcome to OverpassR!'),
+                          p("This is a beta version of a website aimed to help researchers incorporate remote sensing into their work. Select your preferred satellites and click 
+      on the map or manually enter study site coordinates to see satellite overpass information. The table can be downloaded as a csv
+      by clicking the 'Download' button at the bottom. The output table can be sorted by different columns--just click their header.
+      Click the 'Reset' button to clear all user input and start over. Please send bug reports or app suggestions to Andrew Buchanan at ajb28@live.unc.edu." )
     ))
   })
   
@@ -247,7 +248,7 @@ server <- function(input, output, session){
     if(is.null(input$refreshButton))
       return()
     
-    proxyMap%>% clearShapes()
+    proxyMap%>% clearShapes() %>% clearMarkers()
     output$helpText <- renderText({})
     updateDateRangeInput(session, "dates", "Date range:",
                          start = Sys.Date(), end = Sys.Date()+16)
@@ -316,6 +317,7 @@ server <- function(input, output, session){
       addProviderTiles(providers$Esri.WorldImagery, group = "Satellite") %>%
       addProviderTiles(providers$CartoDB.VoyagerOnlyLabels, group = "Satellite") %>%
       setView(lng = lon , lat = lat, zoom = 6) %>%
+      addMarkers(lng = lon, lat = lat, label = paste0('Lat ', round(lat,2), '; Lon: ', round(lon,2)))%>%
       addPolygons(
         data = mgrs, color = 'red', weight = 2, label = paste0('ID: ', mgrs$Name),
         highlightOptions = highlightOptions(color = 'white', weight = 3, bringToFront = TRUE)) %>%
@@ -367,6 +369,7 @@ server <- function(input, output, session){
       addTiles(group = "Default") %>%
       addProviderTiles(providers$Esri.WorldImagery, group = "Satellite") %>%
       addProviderTiles(providers$CartoDB.VoyagerOnlyLabels, group = "Satellite") %>%
+      addMarkers(lng = lon, lat = lat, label = paste0('Lat ', round(lat,2), '; Lon: ', round(lon,2)))%>%
       addPolygons(
         data = tile_shapes, color = 'blue', weight = 2, label = paste0('Path: ',paths,'; Row: ', rows),
         highlightOptions = highlightOptions(color = 'white', weight = 3, bringToFront = TRUE)) %>%
