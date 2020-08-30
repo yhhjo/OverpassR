@@ -157,8 +157,9 @@ server <- function(input, output, session){
       setView(lat=10, lng=0, zoom=2)  %>%
       addLayersControl(
         baseGroups = c("Satellite", "Standard", "Relief", "Topographic"),
-        options = layersControlOptions(collapsed = TRUE)
-      )
+        options = layersControlOptions(collapsed = TRUE)) %>%
+      addLegend(position = "bottomright", colors = c('red', 'blue'), labels = c("Sentinel", "Landsat"), opacity = .5, title = "Tiles")
+    
   })
   
   
@@ -380,7 +381,7 @@ server <- function(input, output, session){
         highlightOptions = highlightOptions(color = 'white', weight = 3, bringToFront = TRUE)) %>%
       addLayersControl(
         baseGroups = c("Satellite", "Standard", "Relief", "Topographic"),
-        options = layersControlOptions(collapsed = TRUE))
+        options = layersControlOptions(collapsed = TRUE)) 
     
     start_date <- input$dates[1] %>% as.numeric()
     end_date <- input$dates[2] %>% as.numeric()
