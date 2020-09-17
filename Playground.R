@@ -269,18 +269,11 @@ server <- function(input, output, session){
       return()
     
     #Check valid dates
-    if(input$dates[1] >= input$dates[2]){
-      output$helpText <- renderText("Please select a positive date range")
+    if (!validDates() | is_empty(global_coords)) {
       return()
-    }
-    
-    else{
+    } else {
       output$helpText <- renderText({})
     }
-    
-    #Ignore if this is NOT a retroactive click
-    if(is_empty(global_coords))
-      return()
     
     #Clear DT and global table to be re-populated
     output$table <- renderDT(NULL)
@@ -289,11 +282,11 @@ server <- function(input, output, session){
     
     for(row in 1:nrow(global_coords)){
   
-      if(any(input$satellite == "s2"))
+      if(any(input$satellite == "s2")) 
         generateS2(global_coords$Long[row], global_coords$Lat[row])
-      if(any(input$satellite == "ls7"))
+      else if(any(input$satellite == "ls7"))
         generate(global_coords$Long[row], global_coords$Lat[row], ls7)
-      if(any(input$satellite == "ls8"))
+      else
         generate(global_coords$Long[row], global_coords$Lat[row], ls8)
     }
   })
@@ -312,7 +305,8 @@ server <- function(input, output, session){
     mgrs <- MGRS[st_intersects(click, MGRS, sparse = FALSE),]
     output_table <- data.frame()
     
-    if(is_empty(swaths$begin)){
+    if(is_empty(swaths$begin) | is_empty(mgrs)){
+      map(lon, lat)
       output$helpText <- renderText("Sentinel2 captures images over land. Some coordinates did not yield overpass information")
       return(NULL)
     }
@@ -325,129 +319,130 @@ server <- function(input, output, session){
 
     # Find the whole number of days between the swath's reference datetime and the start of the user's selected range (date).
     daterange_offset <- (difftime(swaths$begin, start) %>% as.integer() %% 5) %>% ddays()
-    
-    # Datetime objects within user selected range
     dates <-  start + daterange_offset
-    times <- strftime(swaths$begin, format = "%H:%M:%S", tz = "UTC") %>% hms()
-    datetimes <- data.frame("Datetimes (UTC)" = NULL)
+    times <- strftime(swaths$begin, format = "%H:%M:%S", tz = "UTC") %>% as.character.Date()
+    datetimes <- data.frame()
     
     #Positive date range, but too narrow
     if(any(dates > stop)){
-      output$helpText <- renderText("Date range too narrow for some overpasses.Try a range of at least 5 days.")
+      output$helpText <- renderText("Date range too narrow for some overpasses. Try a range of at least 5 days.")
       return()
     }
     
     # Loops roughly the  
     for(i in 1:length(dates)) {
-      x <- seq.Date(dates[i], stop, 5) + times[i]
-      x <- data.frame("Datetimes (UTC)" = x[x <= stop])
-      datetimes <- rbind(datetimes, x)
+      x <- seq.Date(dates[i], stop, 5)
+      x <- data.frame("Date" = x[x <= stop]) %>% as.character.Date()
+      datetimes <- rbind(datetimes, merge(x, times[i]))
     }
+    names(datetimes) <-  c("Date", "Time")
     
     output <- datetimes %>% as.character.Date() %>% merge(mgrs$Name)
-    names(output) <- c("Datetimes (UTC)","MGRS")
-    cbind(output, "Path" = NA, "Row" = NA, "Lat" = lat, "Lon" = lon, "Satellite" = "Sentinel2") %>% unique() %>% update_output()
-
-
+    names(output) <- c("Date", "Time (UTC)" , "MGRS")
+    output <- cbind(output, "Path" = NA, "Row" = NA, "Lat" = lat, "Lon" = lon, "Satellite" = "Sentinel2") %>% unique() %>% update_output()
   }
   
-  map <- function(lon, lat) {
-    
-    return(
-    leafletProxy("map") %>%
-      addTiles(group = "Default") %>%
-      addProviderTiles(providers$Esri.WorldImagery, group = "Satellite") %>%
-      addProviderTiles(providers$CartoDB.VoyagerOnlyLabels, group = "Satellite") %>%
-      addProviderTiles(providers$Esri.WorldPhysical, group = "Relief") %>%
-      addProviderTiles(providers$Esri.DeLorme, group = "Topographic")%>%
-      addMarkers(lng = lon, lat = lat, label = paste0('Lat ', round(lat,2), '; Lon: ', round(lon,2)))%>%
-      addLayersControl(
-        baseGroups = c("Satellite", "Standard", "Relief", "Topographic"),
-        options = layersControlOptions(collapsed = TRUE))
-    )
-  }
   
   #LANDSAT7&8: Updates map with tiles and global table with data given coordinates of a click
   generate <- function(lon, lat, ref){
     
-    df <- returnPR(lon, lat, wrs)
-    paths <- df$path
-    rows <- df$row
-    tile_shapes <- df$shape.geometry
-    start_date <- input$dates[1] %>% as.numeric()
-    end_date <- input$dates[2] %>% as.numeric()
+    df <- returnPR(lon, lat)
+    start <- input$dates[1] %>% as.numeric()
+    stop <- input$dates[2] %>% as.numeric()
     
     #Update the map
     map(lon, lat) %>%  addPolygons(
-      data = tile_shapes, color = 'blue', weight = 2, label = paste0('Path: ',paths,'; Row: ', rows),
+      data = df$shape.geometry, color = 'blue', weight = 2, label = paste0('Path: ', df$path,'; Row: ', df$row),
       highlightOptions = highlightOptions(color = 'white', weight = 3, bringToFront = TRUE))
     
-    
-    #Be sure user selects a positive date range
-    if(start_date >= end_date){
-      output$helpText <- renderText("Please select a positive date range")
-      return(NULL)
-    }
-    
     #Create range of dates from start - end
-    range <- start_date:end_date %>% as.Date('1970-01-01') %>% as.character()
-    CYCLE_1_REFERENCE <- ref$Cycle_Start[1] %>% as.Date() %>% as.numeric()
-    start_date_cycle <- (start_date - CYCLE_1_REFERENCE) %% 16 + 1
-    
+    range <- start:stop %>% as.Date('1970-01-01') %>% as.character()
+    start_date_cycle <- start - (ref$Cycle_Start[1] %>% as.Date() %>% as.numeric()) %% 16 + 1
+
     #Lookup table where every date in rnge has corresponding cycle
-    table <- cbind("Date" = range, "Cycle" = getCycles(1, 16, length(range), 
-                                                       start_date_cycle - 1 )) %>% as.data.frame()
-    updating_table <- NULL
+    table <- cbind("Date" = range, "Cycle" = getCycles(1, 16, length(range), start_date_cycle - 1 )) %>% as.data.frame()
     
-    for(r in 1:length(paths)){
-      cycle <- ref[ref$Path==paths[r],]$Cycle
+    updating_table <- data.frame()
+    
+    for(r in 1:length(df$path)){
+      cycle <- ref[ref$Path==df$path[r],]$Cycle
       dates <- table[table$Cycle==cycle,]$Date %>% as.character()
       
       if(is_empty(dates))
         next
       
-      updating_table <- rbind(updating_table, cbind("Datetimes (UTC)" = dates,"Path" = paths[r], "Row" = rows[r], "MGRS" = NA,
-                                                    "Lat" = round(lat,5), "Lon" = round(lon,5), "Satellite" = (ref$Satellite[[1]] %>% as.character()) ))
+      updating_table <- rbind(updating_table, cbind("Date" = dates, "Time (UTC)" = NA, "Path" = df$path[r], "Row" = df$row[r], "MGRS" = NA,
+                                                    "Lat" = round(lat,5), "Lon" = round(lon,5), 
+                                                    "Satellite" = (ref$Satellite[[1]] %>% as.character())))
     }
     update_output(updating_table)
   }
   
-  #Updates table 
-  update_output <- function(updating_table){
+  
+  # Updates map with user's latest click
+  map <- function(lon, lat) {
     
+    return(
+      leafletProxy("map") %>%
+        addTiles(group = "Default") %>%
+        addProviderTiles(providers$Esri.WorldImagery, group = "Satellite") %>%
+        addProviderTiles(providers$CartoDB.VoyagerOnlyLabels, group = "Satellite") %>%
+        addProviderTiles(providers$Esri.WorldPhysical, group = "Relief") %>%
+        addProviderTiles(providers$Esri.DeLorme, group = "Topographic")%>%
+        addMarkers(lng = lon, lat = lat, label = paste0('Lat ', round(lat,2), '; Lon: ', round(lon,2)))%>%
+        addLayersControl(
+          baseGroups = c("Satellite", "Standard", "Relief", "Topographic"),
+          options = layersControlOptions(collapsed = TRUE))
+    )
+  }
+  
+  
+  update_output <- function(append){
     
-    if(is_empty(updating_table)){
+    if (is_empty(append)){
       output$helpText <- renderText("No overpass in selected date range")
-      return(NULL)
+      return()
+    } else {
+        output$helpText <- renderText({})
     }
-    
-    else
-      output$helpText <- renderText({})
     
     #Renders distinct output
     if(!is_empty(global_table)){
-      global_table <<- rbind(updating_table, global_table) %>% as.data.frame()
+      global_table <<- rbind(append, global_table) %>% as.data.frame()
       global_table <<- global_table[!duplicated(global_table[,1:4]),]
+    } else {
+      global_table <<- append %>% as.data.frame()
     }
     
-    else
-      global_table <<- updating_table %>% as.data.frame()
-    
-    #Display table
-    output$table <<- renderDT( datatable(global_table, 
-                                         rownames = NULL, options = list(paging = FALSE, searching = FALSE, info = FALSE, 
-                                                                         orderClasses = TRUE, order = list(0, 'asc'))) %>%
-                                 formatRound(c(5:6),2) )
+
+    output$table <<- renderDT(datatable(global_table, rownames = NULL, 
+                                        options = list(paging = FALSE, searching = FALSE, info = FALSE, 
+                                                       orderClasses = TRUE, order = list(0, 'asc'))) %>%
+                                formatRound(c(6:7),2) )
     
     
   }
   
+  # Observes download button
   output$download <- downloadHandler(
     filename = "overpassR.csv",
     content = function(file){
       write.csv(global_table, file, row.names = TRUE)
     }
   )
+  
+  
+  # Returns whether dates are a valid range. Handles error message 
+  validDates <- function() {
+    
+    if(input$dates[1] >= input$dates[2]){
+      output$helpText <- renderText("Please select a positive date range")
+      return(FALSE)
+    } else {
+      output$helpText <- renderText({})
+      return(TRUE)
+    }
+  }
 }
 
 
@@ -457,13 +452,8 @@ server <- function(input, output, session){
 
 
 #Helper method takes lon, lat, shapefile, and returns PR of intersected tiles 
-returnPR <- function(lon, lat, shapefile){
+returnPR <- function(lon, lat){
   
-  #Validate input.
-  #PROBLEM: Why is shiny not rendering this output message? 
-  validate(
-    need(validCoords(lon, lat), "Enter valid coordinates")
-  )
   
   coords <- as.data.frame(cbind(lon, lat)) 
   point <- SpatialPoints(coords)
@@ -472,14 +462,10 @@ returnPR <- function(lon, lat, shapefile){
   #Convert the point to a shape file so they can intersect
   pnt <-  st_as_sf(point, coords = c('lon' , 'lat'))
   
-  #Create a boolean matrix of all the polygons that intersect pnt (a user's mapclick)
-  ## And select those polygons from WRS
-  bool_selector <- st_intersects(shapefile, pnt, sparse = FALSE)
-  tiles <- (shapefile[bool_selector,])
-  paths <-  tiles$PATH
-  rows <- tiles$ROW
-  
-  return(data.frame("path" = paths, "row" = rows, "shape" = tiles))
+  bool_selector <- st_intersects(wrs, pnt, sparse = FALSE)
+  tiles <- (wrs[bool_selector,])
+
+  return(data.frame("path" = tiles$PATH, "row" = tiles$ROW, "shape" = tiles))
   
 }
 
