@@ -2,37 +2,31 @@ library(rgdal)
 library(sf)
 library(tidyverse)
 
+#For web scraping
+library(xml2)
+library(rvest)
 
-#TODO: Fetch swaths and save as kml using Regex search 
+url <- 'https://sentinel.esa.int/web/sentinel/missions/sentinel-2/acquisition-plans'
 
-#Read kml
-swaths <- st_read('Data/In/Sentinel/Sentinel-2A_MP_ACQ_KML_20200716T120000_20200803T150000.kml', layer = "NOMINAL")
+# Pull HTML and CSS source code
+page <- read_html(url)
 
-#Columns to be merged with MGRS
-swaths$Overpass <- as.Date(swaths$begin, format = "%y/%m/%d")
-swaths$Time <- strftime(swaths$begin, format = "%H:%M")
+# Pulls specific attribute within webpage that contains the latest sentinel-2a acquisition swath URL extension
+link <- (page %>% html_nodes(".sentinel-2a") %>% html_nodes("a"))[1] %>% as.character()
 
-#Read MGRS file. Write "Overpass" and "Time" columns as <NA>
-mgrs <- st_read('Data/In/Sentinel/Relevant_MGRS.shp')
-mgrs$Overpass <- NA
-mgrs$Time <- NA
+# Regex: match everything between "/d" and .kml on the hyperlink attribute
+extension <- regmatches(link, regexpr(regex, link))
 
-#TODO Clear the unrelated columns for faster processing
-
-#For each MGRS tile, find the Swath it most overlaps with, and update "Overpass" and "Time" data from it
+# Full URL for the latest ESA Sentinel 2A acquisition swath
+retrieve_url <- paste0("https://sentinel.esa.int", extension)
 
 
-#SLOW! Better way of merging data than a for-loop?
-for (r in 1:length(mgrs$Name)) { 
-  swath <- swaths[st_intersects(mgrs[r,], swaths)[[1]],]
-  
-  #Tile overlaps with multiple swaths
-  if(length(swath$name) > 1 ) {
-    #TODO: compare areas to find set swath to one with max overlap.
-    mgrs[r,]$Overpass <- NA
-    mgrs[r,]$Time <- NA
-  }
-  
-  mgrs[r,]$Overpass <- swath$Overpass
-  mgrs[r,]$Time <- swath$Time
-}
+#TODO: Download KML file from retrieve_url, name it something generic 
+## TODO: Handle any link download errors 
+
+#TODO: Ensure downloaded file works and isn't corrupted
+## TODO: can open st_read, make sure it has layer "NOMINAL", and has at least 50 attributes
+
+#TODO: Replace the old file wuth new one
+
+
