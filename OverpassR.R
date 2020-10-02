@@ -88,13 +88,18 @@ ui <- fluidPage(
                                   dateRangeInput("dates", "Date range:", start = Sys.Date(), end = Sys.Date() + 16),
                                   span(textOutput('helpText'), style = "color:red")
                          ),
+                         tags$td(style = "width: 8%"),
+                         tags$td(style = "width: 20%", 
+                                 selectInput('timezone', "Timezone", choices = OlsonNames() %>% as.character(),
+                                             selected = "GMT")),
                          
-                         tags$td(style = "width: 12%"),
+                         tags$td(style = "width: 8%"),
                          tags$td(style = "width: 25%",
                                  checkboxGroupInput("satellite",label = "Satellite:",
                                                     choices = c("Landsat7" = "ls7", "Landsat8" = "ls8", "Sentinel2" = "s2"),
                                                     selected = "ls7")
                          )
+                         
                        ) 
             ) 
   ), 
@@ -161,6 +166,26 @@ server <- function(input, output, session){
     
   })
   
+  
+  observeEvent(input$timezone, {
+    
+    # Ignore if this no clicks have been made
+    if(is_empty(global_coords))
+      return()
+    
+    for (i in 1:length(global_table$Time)) {
+      
+      if(is.na(global_table$Time[i])) {
+        next } else {
+          global_table$Time[i] <<- 
+            paste(table$Date[i], table$Time[i]) %>% as.POSIXct() %>% 
+            strftime(format = "%H:%M:%S", tz = input$timezone, usetz=TRUE) %>% as.character.Date()
+        }
+    }
+    
+    display_global()
+    
+  })
   
   observeEvent(input$find,{
     
@@ -320,7 +345,7 @@ server <- function(input, output, session){
     # Find the whole number of days between the swath's reference datetime and the start of the user's selected range (date).
     daterange_offset <- (difftime(swaths$begin, start) %>% as.integer() %% 5) %>% ddays()
     dates <-  start + daterange_offset
-    times <- strftime(swaths$begin, format = "%H:%M:%S", tz = "UTC", usetz = TRUE) %>% as.character.Date()
+    times <- strftime(swaths$begin, format = "%H:%M:%S", tz = input$timezone, usetz = TRUE) %>% as.character.Date()
     datetimes <- data.frame()
     
     #Positive date range, but too narrow
@@ -338,7 +363,7 @@ server <- function(input, output, session){
     names(datetimes) <-  c("Date", "Time")
     
     output <- datetimes %>% as.character.Date() %>% merge(mgrs$Name)
-    names(output) <- c("Date", "Time " , "MGRS")
+    names(output) <- c("Date", "Time" , "MGRS")
     output <- cbind(output, "Path" = NA, "Row" = NA, "Lat" = lat, "Lon" = lon, "Satellite" = "Sentinel2") %>% unique() %>% update_output()
   }
   
@@ -371,7 +396,7 @@ server <- function(input, output, session){
       if(is_empty(dates))
         next
       
-      updating_table <- rbind(updating_table, cbind("Date" = dates, "Time " = NA, "Path" = df$path[r], "Row" = df$row[r], "MGRS" = NA,
+      updating_table <- rbind(updating_table, cbind("Date" = dates, "Time" = NA, "Path" = df$path[r], "Row" = df$row[r], "MGRS" = NA,
                                                     "Lat" = round(lat,5), "Lon" = round(lon,5), 
                                                     "Satellite" = (ref$Satellite[[1]] %>% as.character())))
     }
@@ -414,13 +439,18 @@ server <- function(input, output, session){
       global_table <<- append %>% as.data.frame()
     }
     
+    display_global()
+  }
+  
+  display_global <- function(){
     
     output$table <<- renderDT(datatable(global_table, rownames = NULL, 
                                         options = list(paging = FALSE, searching = FALSE, info = FALSE, 
                                                        orderClasses = TRUE, order = list(0, 'asc'))) %>%
                                 formatRound(c(6:7),2) )
     
-    
+    #TODO: Remoe Debugging Statement
+    assign("table", global_table, .GlobalEnv)
   }
   
   # Observes download button
