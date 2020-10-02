@@ -88,13 +88,18 @@ ui <- fluidPage(
                                   dateRangeInput("dates", "Date range:", start = Sys.Date(), end = Sys.Date() + 16),
                                   span(textOutput('helpText'), style = "color:red")
                          ),
+                         tags$td(style = "width: 8%"),
+                         tags$td(style = "width: 20%", 
+                                 selectInput('timezone', "Timezone", choices = OlsonNames() %>% as.character(),
+                                             selected = "GMT")),
                          
-                         tags$td(style = "width: 12%"),
+                         tags$td(style = "width: 8%"),
                          tags$td(style = "width: 25%",
                                  checkboxGroupInput("satellite",label = "Satellite:",
                                                     choices = c("Landsat7" = "ls7", "Landsat8" = "ls8", "Sentinel2" = "s2"),
                                                     selected = "ls7")
                          )
+                               
                        ) 
             ) 
   ), 
@@ -161,6 +166,16 @@ server <- function(input, output, session){
     
   })
   
+  observeEvent(input$timezone, {
+    
+    # Ignore if this no clicks have been made
+    if(is_empty(global_coords) || !any(input$satellite == "s2"))
+      return()
+    
+    #TODO: Update timezones on global table
+    
+    
+  })
   
   observeEvent(input$find,{
     
@@ -320,7 +335,7 @@ server <- function(input, output, session){
     # Find the whole number of days between the swath's reference datetime and the start of the user's selected range (date).
     daterange_offset <- (difftime(swaths$begin, start) %>% as.integer() %% 5) %>% ddays()
     dates <-  start + daterange_offset
-    times <- strftime(swaths$begin, format = "%H:%M:%S", tz = "UTC") %>% as.character.Date()
+    times <- strftime(swaths$begin, format = "%H:%M:%S", tz = input$timezone, usetz = TRUE) %>% as.character.Date()
     datetimes <- data.frame()
     
     #Positive date range, but too narrow
@@ -338,7 +353,7 @@ server <- function(input, output, session){
     names(datetimes) <-  c("Date", "Time")
     
     output <- datetimes %>% as.character.Date() %>% merge(mgrs$Name)
-    names(output) <- c("Date", "Time (UTC)" , "MGRS")
+    names(output) <- c("Date", "Time" , "MGRS")
     output <- cbind(output, "Path" = NA, "Row" = NA, "Lat" = lat, "Lon" = lon, "Satellite" = "Sentinel2") %>% unique() %>% update_output()
   }
   
@@ -371,7 +386,7 @@ server <- function(input, output, session){
       if(is_empty(dates))
         next
       
-      updating_table <- rbind(updating_table, cbind("Date" = dates, "Time (UTC)" = NA, "Path" = df$path[r], "Row" = df$row[r], "MGRS" = NA,
+      updating_table <- rbind(updating_table, cbind("Date" = dates, "Time" = NA, "Path" = df$path[r], "Row" = df$row[r], "MGRS" = NA,
                                                     "Lat" = round(lat,5), "Lon" = round(lon,5), 
                                                     "Satellite" = (ref$Satellite[[1]] %>% as.character())))
     }
