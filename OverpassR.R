@@ -448,9 +448,6 @@ server <- function(input, output, session){
                                         options = list(paging = FALSE, searching = FALSE, info = FALSE, 
                                                        orderClasses = TRUE, order = list(0, 'asc'))) %>%
                                 formatRound(c(6:7),2) )
-    
-    #TODO: Remoe Debugging Statement
-    assign("table", global_table, .GlobalEnv)
   }
   
   # Observes download button
