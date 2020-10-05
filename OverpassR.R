@@ -10,6 +10,8 @@ library(lubridate)
 library(DT)
 library(plyr)
 library(dplyr)
+library(xml2)
+library(rvest)
 
 
 #Read the wrs tiles 
@@ -26,7 +28,7 @@ choices <- c("ls7","ls8","s2")
 
 #Acquisition swath and mgrs tiles for Sentinel2
 MGRS <- st_read('Data/In/Sentinel/Relevant_MGRS.shp')
-SWATHS <- st_read('Data/In/Sentinel/Sentinel-2A_MP_ACQ_KML_20200716T120000_20200803T150000.kml', layer = "NOMINAL")
+SWATHS <- st_read('Data/In/Sentinel/Swaths.kml', layer = "NOMINAL")
 
 #Global variables. It will update with each map click and reset only when 'reset map' button is clicked
 global_table = data.frame()
@@ -49,11 +51,12 @@ ui <- fluidPage(
     '))),
   titlePanel(tags$table(id = "title-panel",
                         tags$tr(
-                          tags$td(style = "width: 40%"),
-                          tags$td(style = "width: 20%", 
-                                  img(src = "OverpassR_logo.png", 
-                                      style = "width: 100%")),
-                          tags$td(style = "width: 15%"),
+                          tags$td(style = "width: 25%", 
+                                  img(src = "Cuahsi_logo.png", 
+                                      style = "width: 100%; float: left")),
+                          tags$td(style = "width: 13%"),
+                          tags$td(style = "width: 24%", "OverpassR"), 
+                          tags$td(style = "width: 13%"),
                           tags$td(style = "width: 25%", 
                                   img(src = "UNC_logo_flat.png", 
                                       style="width: 80%; height 80%; float: right"))))),
@@ -142,6 +145,8 @@ server <- function(input, output, session){
   proxy_table = dataTableProxy('table')
   proxyMap <- leafletProxy("map")
   
+  
+  
   observeEvent(once = TRUE,ignoreNULL = FALSE, ignoreInit = FALSE, eventExpr = proxyMap, { 
     # event will be called when histdata changes, which only happens once, when it is initially calculated
     showModal(modalDialog(footer = modalButton("Go"),
@@ -151,6 +156,7 @@ server <- function(input, output, session){
       by clicking the 'Download' button at the bottom. The output table can be sorted by different columns--just click their header.
       Click the 'Reset' button to clear all user input and start over. Please send bug reports or app suggestions to Andrew Buchanan at ajb28@live.unc.edu." )
     ))
+    get_swaths()
   })
   
   #Render map with base layers WorldImagery and Labels
@@ -173,20 +179,21 @@ server <- function(input, output, session){
   
   
   observeEvent(input$timezone, {
-    
     # Ignore if this no clicks have been made
-    if(is_empty(global_coords)) {
+    if (is_empty(global_coords)) {
       return()
     }
     
     for (i in 1:length(global_table$Time)) {
-      
-      if(is.na(global_table$Time[i])) {
-        next } else {
-          global_table$Time[i] <<- 
-            paste0(global_table$Date[i], global_table$Time[i]) %>% as.POSIXct() %>% 
-            strftime(format = "%H:%M:%S", tz = input$timezone, usetz=TRUE) %>% as.character.Date()
-        }
+      if (is.na(global_table$Time[i])) {
+        next
+      } else {
+        global_table$Time[i] <<-
+          paste0(global_table$Date[i], global_table$Time[i]) %>% as.POSIXct() %>%
+          strftime(format = "%H:%M:%S",
+                   tz = input$timezone,
+                   usetz = TRUE) %>% as.character.Date()
+      }
     }
     
     display_global()
@@ -322,7 +329,10 @@ server <- function(input, output, session){
     }
   })
   
-  #SENTINEL2: Updates map, global table, clobal coords given click with MGRS and swath data
+  
+  # === SENTINEL2 === 
+  ## Given coordinates from an observed click, retroactive update, or manual 'find", this updates map and global table output
+  
   generateS2 <- function(lon, lat){
     
     start <- input$dates[1] %>% as.Date()
@@ -360,7 +370,6 @@ server <- function(input, output, session){
       return()
     }
     
-    # Loops roughly the  
     for(i in 1:length(dates)) {
       x <- seq.Date(dates[i], stop, 5)
       x <- data.frame("Date" = x[x <= stop]) %>% as.character.Date()
@@ -374,7 +383,8 @@ server <- function(input, output, session){
   }
   
   
-  #LANDSAT7&8: Updates map with tiles and global table with data given coordinates of a click
+  # === LANDSAT 7 & 8 === 
+  ## Given coordinates and reference to a local lookup table (specifying ls7 or ls8), update map and table output
   generate <- function(lon, lat, ref){
     
     df <- returnPR(lon, lat)
@@ -428,6 +438,7 @@ server <- function(input, output, session){
   }
   
   
+  # Processes a data frame to be added to the output table
   update_output <- function(append){
     
     if (is_empty(append)){
@@ -448,6 +459,7 @@ server <- function(input, output, session){
     display_global()
   }
   
+  # Displays the global variable containing the output table 
   display_global <- function(){
     
     output$table <<- renderDT(datatable(global_table, rownames = NULL, 
@@ -476,9 +488,60 @@ server <- function(input, output, session){
       return(TRUE)
     }
   }
+  
+  # === WEB SCRAPER ===
+  # This function goes to ESA's website containing Sentinel Acquisition Plans, downloads the kml, and replaces the old one locally
+  # Required conditions: existing local acquisition plan's latest referenced date in $begin attribute is at least 11 prior to today
+  # Error handling: If error or warning is raised, the local plan will not be replaced and an error message is displayed, prompting 
+  # user to report bug to ajb28@me.com. 
+  
+  get_swaths <- function() {
+    
+    # Fetch if today is more than 10 days over the latest acquisition SWATH
+    if (!(SWATHS$begin %>% as.Date() %>% max() - today()) < -10) {
+      return()
+    } else {
+      
+      out <- tryCatch(
+        {
+          url <-
+            'https://sentinel.esa.int/web/sentinel/missions/sentinel-2/acquisition-plans'
+          
+          # Pull HTML and CSS source code
+          page <- read_html(url)
+          
+          # Pulls specific attribute within webpage that contains the latest sentinel-2a acquisition swath URL extension
+          link <-
+            (page %>% html_nodes(".sentinel-2a") %>% html_nodes("a"))[1] %>% as.character()
+          
+          # Regex: match everything between "/d" and .kml on the hyperlink attribute
+          regex <- "/d(.*)\\.kml"
+          
+          # Extracts the extension
+          extension <- regmatches(link, regexpr(regex, link))
+          url <- paste0("https://sentinel.esa.int", extension)
+          
+          # Download kml as temp file
+          download.file(url, "temp.kml")
+          stopifnot(file.rename("temp.kml", "./Data/In/Sentinel/Swaths.kml"))
+          
+          # Update local data
+          SWATHS <<- st_read("Data/In/Sentinel/Swaths.kml", layer = "NOMINAL")
+        },
+        
+        # === WARNING HANDLING ===
+        warning = function(cond) {
+          output$helpText <- renderText("A warning flag was raised while updating ESA Sentinel 2 Database. Please report this bug to ajb28@live.unc.edu ")
+        },
+        
+        # === ERROR HANDLING  ===
+        error = function(cond) {
+          output$helpText <- renderText("An error occurred connecting to ESA Sentinel 2 Database. Please report this bug to ajb28@live.unc.edu ")
+        }
+      )
+    }
+  }
 }
-
-
 
 
 #Helper methods---------------------------------------------------------------------------------------------------
