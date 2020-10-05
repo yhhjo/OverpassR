@@ -175,15 +175,16 @@ server <- function(input, output, session){
   observeEvent(input$timezone, {
     
     # Ignore if this no clicks have been made
-    if(is_empty(global_coords))
+    if(is_empty(global_coords)) {
       return()
+    }
     
     for (i in 1:length(global_table$Time)) {
       
       if(is.na(global_table$Time[i])) {
         next } else {
           global_table$Time[i] <<- 
-            paste(table$Date[i], table$Time[i]) %>% as.POSIXct() %>% 
+            paste0(global_table$Date[i], global_table$Time[i]) %>% as.POSIXct() %>% 
             strftime(format = "%H:%M:%S", tz = input$timezone, usetz=TRUE) %>% as.character.Date()
         }
     }
