@@ -47,11 +47,16 @@ ui <- fluidPage(
         height:100%;
       }
     '))),
-  
-  
-  fixedRow(
-    column(4, offset = 5, titlePanel("OverpassR"))
-  ),
+  titlePanel(tags$table(id = "title-panel",
+                        tags$tr(
+                          tags$td(style = "width: 40%"),
+                          tags$td(style = "width: 20%", 
+                                  img(src = "OverpassR_logo.png", 
+                                      style = "width: 100%")),
+                          tags$td(style = "width: 15%"),
+                          tags$td(style = "width: 25%", 
+                                  img(src = "UNC_logo_flat.png", 
+                                      style="width: 80%; height 80%; float: right"))))),
   
   
   tags$head(
