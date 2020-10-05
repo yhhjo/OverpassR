@@ -15,13 +15,17 @@ page <- read_html(url)
 link <- (page %>% html_nodes(".sentinel-2a") %>% html_nodes("a"))[1] %>% as.character()
 
 # Regex: match everything between "/d" and .kml on the hyperlink attribute
+regex <- "/d(.*)\\.kml"
+
+# Extracts the extension
 extension <- regmatches(link, regexpr(regex, link))
 
 # Full URL for the latest ESA Sentinel 2A acquisition swath
-retrieve_url <- paste0("https://sentinel.esa.int", extension)
+url <- paste0("https://sentinel.esa.int", extension)
 
 
 #TODO: Download KML file from retrieve_url, name it something generic 
+download.file(url, method = "curl", "Latest_Swaths.kml", destfile = "Data/In/Sentinel")
 ## TODO: Handle any link download errors 
 
 #TODO: Ensure downloaded file works and isn't corrupted
