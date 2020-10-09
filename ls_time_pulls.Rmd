@@ -1,0 +1,65 @@
+---
+title: "Landsat_Aquisition_Times"
+author: "Simon Topp"
+date: "10/9/2020"
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+library(RCurl)
+library(tidyverse)
+library(lubridate)
+library(sf)
+
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+## Download a full cycle of landsat overpasses
+```{r}
+Sys.Date()
+dates <- seq(ymd(Sys.Date()) - 16, ymd(Sys.Date()), 'days')
+
+timePull <- function(date, sat){
+  month <- month(date, label = T)
+  year <- year(date)
+  date <- format(date, format = "%b-%d-%Y")
+  
+  url <- paste0('https://landsat.usgs.gov/landsat/all_in_one_pending_acquisition/',sat,'/Pend_Acq/y',year,'/',month,'/',date,'.txt')
+  
+read_fwf(url, fwf_widths(c(5,5,20,NA)), col_types = c('ii??')) %>%
+  filter(!is.na(X1)) %>%
+  select(Path = X1, Row = X2, Img.Start = X3) %>%
+  mutate(time.parsed = parse_date_time(Img.Start,'j-HMS'))
+}
+
+l8.times <- map2_dfr(dates, 'L8',timePull)
+
+l7.times <- map2_dfr(dates, 'L7', timePull)
+```
+
+## Look at times spatially and see if they make sense
+
+```{r}
+wrs <- st_read('data/in/Landsat/wrs2_asc_desc.shp') %>% filter(MODE == 'D')
+
+l7.sf <- l7.times %>%
+  mutate(hour = hour(time.parsed)) %>%
+  left_join(wrs, by = c('Path' = 'PATH', 'Row'= 'ROW')) %>%
+  st_as_sf() %>%
+  st_centroid()
+
+mapview::mapview(l7.sf, zcol = 'hour')
+
+
+l8.sf <- l8.times %>%
+  mutate(hour = hour(time.parsed)) %>%
+  left_join(wrs, by = c('Path' = 'PATH', 'Row'= 'ROW')) %>%
+  st_as_sf() %>%
+  st_centroid()
+
+mapview::mapview(l8.sf, zcol = 'hour')
+```
+
