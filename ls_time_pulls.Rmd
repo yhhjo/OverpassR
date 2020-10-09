@@ -62,4 +62,3 @@ l8.sf <- l8.times %>%
 
 mapview::mapview(l8.sf, zcol = 'hour')
 ```
-
