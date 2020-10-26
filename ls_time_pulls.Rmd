@@ -19,7 +19,6 @@ knitr::opts_chunk$set(echo = TRUE)
 
 ## Download a full cycle of landsat overpasses
 ```{r}
-Sys.Date()
 dates <- seq(ymd(Sys.Date()) - 16, ymd(Sys.Date()), 'days')
 
 timePull <- function(date, sat){
@@ -36,9 +35,47 @@ read_fwf(url, fwf_widths(c(5,5,20,NA)), col_types = c('ii??')) %>%
 }
 
 l8.times <- map2_dfr(dates, 'L8',timePull)
-
 l7.times <- map2_dfr(dates, 'L7', timePull)
 ```
+
+
+## Acquire reference times for all paths, 1-233. Some return periods have holes
+```{r}
+acquire <- function(sat) {
+
+  df <- data.frame("Satellite" = sat, Path = 1:233, first = NA, last= NA)
+  
+  date <- Sys.Date() + 1
+  
+  # Acquires datetimes from today going backward until all Paths have a reference
+  max_count = 0
+  
+  while(anyNA(df) && max_count < 50) {
+    
+    ref <- timePull(date, sat)
+    
+    for (path in ref$Path %>% unique()) {
+      
+      # Only add to paths without a reference
+      if(anyNA(df[path,]) ) {
+          first <- ref %>% filter(Path == path)  %>% {.[[1,4]]} %>% as_datetime() %>% format("%H:%M:%S")
+          last <- ref %>% filter(Path == path) %>% last() %>% last() %>% as_datetime() %>% format("%H:%M:%S")
+          df[path,]$first <- first
+          df[path,]$last <- last
+      }
+    }
+    date = date - 1
+    max_count = max_count + 1
+  }
+  return(df)
+}
+
+
+l7.lookup <- merge(read_csv('Data/In/Landsat/landsat7_lookup.csv'), acquire("L7"))
+l8.lookup <- merge(read_csv('Data/In/Landsat/landsat8_lookup.csv'), acquire("L8"))
+
+```
+
 
 ## Look at times spatially and see if they make sense
 
