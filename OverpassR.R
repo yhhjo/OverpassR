@@ -15,8 +15,8 @@ library(rvest)
 
 
 #Read the wrs tiles
-wrs <- st_read('Data/In/Landsat/wrs2_asc_desc.shp')
-wrs <- wrs[wrs$MODE == 'D',]
+wrs <-
+  st_read('Data/In/Landsat/wrs2_cleaned_datetime.shp') %>% filter(MODE == 'D')
 
 #Lookup tables for Landsat 7 and 8
 ls8 <-
@@ -175,7 +175,7 @@ ui <- fluidPage(
             actionButton("refreshButton", " Reset ")),
     tags$td(style = "width: 10%",
             downloadButton('download', "Download"))
-  ), ),
+  ),),
   
   DTOutput('table')
   
@@ -196,38 +196,19 @@ server <- function(input, output, session) {
     eventExpr = proxyMap,
     {
       # event will be called when histdata changes, which only happens once, when it is initially calculated
-      
-      #TODO: Insert hyperlinks and numbered list for directions
       showModal(modalDialog(
         footer = modalButton("Go"),
-        h1("Welcome to OverpassR (beta)!"),
+        h1('Welcome to OverpassR!'),
         p(
-          "OverpassR was designed for integrating satellite remote sensing and field data collection. It is 
-          an interactive tool that visualizes the location and footprint of satellite overpasses (or tiles, such as Landsat 7, 8, and Sentinel 2A/B) 
-          as well as date/times. OverpassR can help researchers plan field campaigns during satellite overpasses as well as to simply visualize the spatial 
-          and temporal coverage of satellite images over study areas."),
-        p(strong("Directions")),
-        p(
-          "Select your preferred satellites.
-          Click on the map (in as many locations as desired) or manually enter coordinates to see overpass 
-          locations on map and a table of dates. (The table can be interactively sorted by different columns by clicking the header).
-          Click the “Download” button at the bottom to generate a .csv file of the table of overpass dates.
-          Hit “Reset” to clear selections and start over."),
-        p(
-          "Please send bug reports to the Lead Developer, Andrew Buchanan at the email address below. Contact Simon Topp and John Gardner with feedback on current or desired future functionality.
-          Lead Developer: Andrew Buchanan (ajb28@live.unc.edu).
-          Project Guidance: Simon Topp (sntopp@live.unc.edu), John Gardner (johngardner87@gmail.com), Tamlin Pavelsky."),
-        p(
-          "Global Hydrology Lab
-          University of North Carolina")
+          "This is a beta version of a website aimed to help researchers incorporate remote sensing into their work. Select your preferred satellites and click
+      on the map or manually enter study site coordinates to see satellite overpass information. The table can be downloaded as a csv
+      by clicking the 'Download' button at the bottom. The output table can be sorted by different columns--just click their header.
+      Click the 'Reset' button to clear all user input and start over. Please send bug reports or app suggestions to Andrew Buchanan at ajb28@live.unc.edu."
+        )
       ))
-      
-      # Fetches the latest swaths, if available, and returns a number indicating exit status.
-      #TODO: handle error codes with helptext
       get_swaths()
     }
   )
-      
   
   #Render map with base layers WorldImagery and Labels
   output$map <- renderLeaflet({
@@ -372,7 +353,6 @@ server <- function(input, output, session) {
     
     proxyMap %>% clearShapes() %>% clearMarkers()
     output$helpText <- renderText({
-      
     })
     updateDateRangeInput(session,
                          "dates",
@@ -397,7 +377,6 @@ server <- function(input, output, session) {
       return()
     } else {
       output$helpText <- renderText({
-        
       })
     }
     
@@ -428,9 +407,9 @@ server <- function(input, output, session) {
     st_crs(click) = 4326
     
     #Swaths and mgrs that contain click
-    swaths <- SWATHS[st_intersects(click, SWATHS, sparse = FALSE),]
+    swaths <- SWATHS[st_intersects(click, SWATHS, sparse = FALSE), ]
     swaths$begin <- swaths$begin %>% ymd_hms()
-    mgrs <- MGRS[st_intersects(click, MGRS, sparse = FALSE),]
+    mgrs <- MGRS[st_intersects(click, MGRS, sparse = FALSE), ]
     output_table <- data.frame()
     
     if (is_empty(swaths$begin) | is_empty(mgrs)) {
@@ -506,10 +485,10 @@ server <- function(input, output, session) {
     
     #Update the map
     map(lon, lat) %>%  addPolygons(
-      data = df$shape.geometry,
+      data = df$geometry,
       color = 'blue',
       weight = 2,
-      label = paste0('Path: ', df$path, '; Row: ', df$row),
+      label = paste0('Path: ', df$PATH, '; Row: ', df$ROW),
       highlightOptions = highlightOptions(
         color = 'white',
         weight = 3,
@@ -527,23 +506,40 @@ server <- function(input, output, session) {
       cbind("Date" = range,
             "Cycle" = getCycles(1, 16, length(range), start_date_cycle - 1)) %>% as.data.frame()
     
+    if (ref$Satellite[[1]] == "Landsat8") {
+      times <- df$L8_Time
+    } else {
+      times <- df$L7_Time
+    }
+    
     updating_table <- data.frame()
     
-    for (r in 1:length(df$path)) {
-      cycle <- ref[ref$Path == df$path[r],]$Cycle
-      dates <- table[table$Cycle == cycle,]$Date %>% as.character()
+    for (r in 1:length(df$PATH)) {
+      cycle <- ref[ref$Path == df$PATH[r], ]$Cycle
+      dates <- table[table$Cycle == cycle, ]$Date %>% as.character()
       
       if (is_empty(dates))
         next
+      
+      if (!is.na(times[r])) {
+        time <-
+          paste0(Sys.Date(), times[r]) %>% as.POSIXct() %>% strftime(format = "%H:%M:%S",
+                                                                     tz = input$timezone,
+                                                                     usetz = TRUE) %>% as.character.Date()
+        
+      } else {
+        time <- NA
+      }
+      
       
       updating_table <-
         rbind(
           updating_table,
           cbind(
             "Date" = dates,
-            "Time" = NA,
-            "Path" = df$path[r],
-            "Row" = df$row[r],
+            "Time" = df$L7_Time[r],
+            "Path" = df$PATH[r],
+            "Row" = df$ROW[r],
             "MGRS" = NA,
             "Lat" = round(lat, 5),
             "Lon" = round(lon, 5),
@@ -584,7 +580,6 @@ server <- function(input, output, session) {
       return()
     } else {
       output$helpText <- renderText({
-        
       })
     }
     
@@ -592,7 +587,7 @@ server <- function(input, output, session) {
     if (!is_empty(global_table)) {
       global_table <<- rbind(append, global_table) %>% as.data.frame()
       global_table <<-
-        global_table[!duplicated(global_table[, 1:4]),]
+        global_table[!duplicated(global_table[, 1:4]), ]
     } else {
       global_table <<- append %>% as.data.frame()
     }
@@ -632,7 +627,6 @@ server <- function(input, output, session) {
       return(FALSE)
     } else {
       output$helpText <- renderText({
-        
       })
       return(TRUE)
     }
@@ -641,7 +635,8 @@ server <- function(input, output, session) {
   # === WEB SCRAPER ===
   # This function goes to ESA's website containing Sentinel Acquisition Plans, downloads the kml, and replaces the old one locally
   # Required conditions: existing local acquisition plan's latest referenced date in $begin attribute is at least 11 prior to today
-  # Error handling: If a warning is raised, returns 2. If an error is raised, returns 3
+  # Error handling: If error or warning is raised, the local plan will not be replaced and an error message is displayed, prompting
+  # user to report bug to ajb28@me.com.
   
   get_swaths <- function() {
     # Fetch if today is more than 10 days over the latest acquisition SWATH
@@ -673,17 +668,22 @@ server <- function(input, output, session) {
         # Update local data
         SWATHS <<-
           st_read("Data/In/Sentinel/Swaths.kml", layer = "NOMINAL")
-        return(0)
       },
       
       # === WARNING HANDLING ===
       warning = function(cond) {
-        return(2)
+        output$helpText <-
+          renderText(
+            "A warning flag was raised while updating ESA Sentinel 2 Database. Please report this bug to ajb28@live.unc.edu "
+          )
       },
       
       # === ERROR HANDLING  ===
       error = function(cond) {
-        return(3)
+        output$helpText <-
+          renderText(
+            "An error occurred connecting to ESA Sentinel 2 Database. Please report this bug to ajb28@live.unc.edu "
+          )
       })
     }
   }
@@ -704,13 +704,7 @@ returnPR <- function(lon, lat) {
   pnt <-  st_as_sf(point, coords = c('lon' , 'lat'))
   
   bool_selector <- st_intersects(wrs, pnt, sparse = FALSE)
-  tiles <- (wrs[bool_selector,])
-  
-  return(data.frame(
-    "path" = tiles$PATH,
-    "row" = tiles$ROW,
-    "shape" = tiles
-  ))
+  return(wrs[bool_selector, ])
   
 }
 
