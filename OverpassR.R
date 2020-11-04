@@ -63,7 +63,7 @@ ui <- fluidPage(
             style = "width: 100%; float: left")
       ),
       tags$td(style = "width: 13%"),
-      tags$td(style = "width: 24%", "OverpassR"),
+      tags$td(style = "width: 24%", "Overpasser"),
       tags$td(style = "width: 13%"),
       tags$td(
         style = "width: 25%",
@@ -177,9 +177,9 @@ ui <- fluidPage(
             downloadButton('download', "Download"))
   ),),
   
-  DTOutput('table')
+  DTOutput('table'),
   
-)#End of ui
+)
 
 
 
@@ -196,16 +196,43 @@ server <- function(input, output, session) {
     eventExpr = proxyMap,
     {
       # event will be called when histdata changes, which only happens once, when it is initially calculated
-      showModal(modalDialog(
-        footer = modalButton("Go"),
-        h1('Welcome to OverpassR!'),
-        p(
-          "This is a beta version of a website aimed to help researchers incorporate remote sensing into their work. Select your preferred satellites and click
-      on the map or manually enter study site coordinates to see satellite overpass information. The table can be downloaded as a csv
-      by clicking the 'Download' button at the bottom. The output table can be sorted by different columns--just click their header.
-      Click the 'Reset' button to clear all user input and start over. Please send bug reports or app suggestions to Andrew Buchanan at ajb28@live.unc.edu."
+      showModal(
+        modalDialog(
+          footer = modalButton("Go"),
+          h1('Welcome to Overpasser! (beta)'),
+          tags$p(
+            tags$br(),
+            tags$blockquote("Overpasser was designed for integrating satellite remote sensing and field data collection. It is an interactive tool that 
+                           visualizes the location and footprint of satellite overpasses (or tiles, such as Landsat 7, 8, and Sentinel 2A/B) as well 
+                          as date/times. OverpassR can help researchers plan field campaigns during satellite overpasses as well as to simply visualize 
+                          the spatial and temporal coverage of satellite images over study areas."
+            ),
+            tags$br(),
+            tags$blockquote(
+              tags$b("Directions:"),
+              tags$ol(
+                tags$li("Select your preferred satellites."),
+                tags$li("Click on the map (in as many locations as desired) or manually enter coordinates to see overpass locations on map and a table of dates. 
+              (The table can be interactively sorted by different columns by clicking the header)."),
+                tags$li("Click the “Download” button at the bottom to generate a .csv file of the table of overpass dates."),
+                tags$li("Hit “Reset” to clear selections and start over.")
+              )
+            ),
+            
+            
+            tags$i(
+              tags$p("Please send bug reports to the Lead Developer, Andrew Buchanan at the email address below. 
+                          Contact Simon Topp and John Gardner with feedback on current or desired future functionality."
+              ),
+              p("Lead Developer: Andrew Buchanan (ajb28@live.unc.edu)."),
+              p("Project Guidance: Simon Topp (sntopp@live.unc.edu), John Gardner (johngardner87@gmail.com), and Tamlin Pavelsky.")
+            ),
+            tags$b(
+              tags$a(href = "http://uncglobalhydrology.org/", "Global Hydrology Lab")
+            )
+          )
+          )
         )
-      ))
       get_swaths()
     }
   )
