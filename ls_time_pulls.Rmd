@@ -38,6 +38,52 @@ l8.times <- map2_dfr(dates, 'L8',timePull)
 l7.times <- map2_dfr(dates, 'L7', timePull)
 ```
 
+## Acquire reference times for each path/row
+```{r}
+wrs <- st_read('Data/In/Landsat/wrs2_cleaned.shp')
+wrs <- wrs[wrs$MODE == 'D',]
+
+times <- data.frame("PATH" = wrs$PATH, "ROW" = wrs$ROW)
+
+
+mergeTime <- function(into, sat, MAXCOUNT) {
+  
+  into <- cbind(into, data.frame("Time" = NA))
+
+  for (i in 0:MAXCOUNT-1) {
+    ref <- timePull(Sys.Date() - i, sat)
+    ref$time.parsed <-
+      ref$time.parsed %>% strftime(format = "%H:%M:%S",
+                                   tz = "GMT",
+                                   usetz = TRUE)
+    
+    names(ref)[names(ref) == "time.parsed"] <- "Time"
+    
+    into <-
+      left_join(into, ref, by = c('PATH' = 'Path', 'ROW' = 'Row')) %>%
+      mutate(Time = coalesce(Time.x, Time.y)) %>% select(-Time.x,-Time.y,-Img.Start)
+    
+    if (!anyNA(into$Time)) {
+      break
+    }
+  }
+  
+  colname <- paste0(sat, "_Time")
+  
+  #Rename the column of acquisition times "L8_Times" or "L7_Times" and add column "Times" to be NA so function can be repeated
+  names(into)[names(into) == "Time"] <- colname
+  return(into)
+
+}
+
+times <- mergeTime(times, "L8", 80)
+times <- mergeTime(times, "L7", 80)
+
+joined <- left_join(wrs, times)
+joined <- joined %>% unique()
+
+st_write(joined, "Data/In/wrs2_cleaned_datetime.shp")
+```
 
 ## Acquire reference times for all paths, 1-233. Some return periods have holes
 ```{r}
@@ -53,6 +99,7 @@ acquire <- function(sat) {
   while(anyNA(df) && max_count < 50) {
     
     ref <- timePull(date, sat)
+    ref$time.parsed <- ref$time.parsed %>% strftime(format = "%H:%M:%S", tz = "GMT", usetz = TRUE)
     
     for (path in ref$Path %>% unique()) {
       
@@ -77,6 +124,9 @@ l8.lookup <- merge(read_csv('Data/In/Landsat/landsat8_lookup.csv'), acquire("L8"
 ```
 
 
+```{r}
+
+```
 ## Look at times spatially and see if they make sense
 
 ```{r}
