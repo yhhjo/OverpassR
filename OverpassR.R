@@ -8,6 +8,7 @@ library(lubridate)
 library(DT)
 library(plyr)
 library(dplyr)
+
 library(xml2)
 library(rvest)
 
@@ -16,6 +17,8 @@ library(rvest)
 #  ============================ GLOBAL VARIABLES =======================================
 
 wrs <- st_read('Data/In/Landsat/wrs2_cleaned_datetime.shp') %>% filter(MODE == 'D')
+
+
 
 # Lookup tables for Landsat 7 and 8 dates
 ls8 <- read.csv('Data/In/Landsat/landsat8_lookup.csv') %>% cbind("Satellite" = "Landsat8")
@@ -37,6 +40,7 @@ LAUNCHING <-  TRUE
 
 
 ui <- fluidPage(
+
   tags$head(tags$style(
     HTML(
       '.modal.in .modal-dialog{
@@ -49,6 +53,17 @@ ui <- fluidPage(
         width:100%;
         height:100%;
       }'
+
+  
+  fixedRow(
+    column(4, offset = 5,
+           titlePanel("OverpassR")) #,
+  ),
+  
+  fixedRow(
+    column(10, offset = 3, 
+           mainPanel("Click on map or enter coordinates to view satellite overpass information")
+
     )
   )),
   titlePanel(tags$table(
