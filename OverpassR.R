@@ -1,4 +1,3 @@
-#All packages used at some point in the project - will narrow down at the end
 library(shiny)
 library(leaflet)
 library(sf)
@@ -16,7 +15,6 @@ library(rvest)
 
 #  ============================ GLOBAL VARIABLES =======================================
 
-#Read the wrs tiles
 wrs <- st_read('Data/In/Landsat/wrs2_cleaned_datetime.shp') %>% filter(MODE == 'D')
 
 # Lookup tables for Landsat 7 and 8 dates
@@ -195,7 +193,6 @@ server <- function(input, output, session) {
   
   
   # ====== Help dialogue / landing page ======
-  
   observe({
     if (!is.null(input$help_button) || LAUNCHING) {
       LAUNCHING <<- FALSE
@@ -266,7 +263,6 @@ server <- function(input, output, session) {
   
   
   # ====== Render map with WorldImagery and Labels as base ======
-  
   output$map <- renderLeaflet({
     leaflet(options = leafletOptions(minZoom = .75)) %>%
       setMaxBounds(
@@ -299,7 +295,6 @@ server <- function(input, output, session) {
   
   
   # ====== Handle timezone changes ======
-  
   observeEvent(input$timezone, {
     if (is_empty(global_coords)) {
       return()
@@ -321,7 +316,6 @@ server <- function(input, output, session) {
   
   
   # ====== Manually entered coordinate search ======
-  
   observeEvent(input$find, {
     lon <- input$lon %>% as.numeric()
     lat <- input$lat %>% as.numeric()
@@ -375,7 +369,7 @@ server <- function(input, output, session) {
   })
   
   
-  #Use a separate observer to clear shapes and output table if "clear tiles" button clicked
+  # ====== Refresh button: use proxy map to clear tiles ======
   observeEvent(input$refreshButton, {
     
     proxyMap %>% clearShapes() %>% clearMarkers()
@@ -391,25 +385,21 @@ server <- function(input, output, session) {
     output$table <- renderDT(NULL)
     global_table <<- data.frame()
     global_coords <<- data.frame()
-    
-    
   })
   
-  #Retroactively update output table with a new date filter
+  
+  # ====== Retroactively update output table with a new date filter ======
   observeEvent(input$dates, {
     if (is.null(input$dates))
       return()
     
-    #Check valid dates
     if (!validDates() | is_empty(global_coords)) {
       return()
     } else {
-      output$helpText <- renderText({
-        
-      })
+      output$helpText <- renderText({})
     }
     
-    #Clear DT and global table to be re-populated
+    #Clear output table and global table. Re-populate with global coords
     output$table <- renderDT(NULL)
     global_table <<- data.frame()
     leafletProxy("map") %>% clearShapes()
@@ -417,15 +407,22 @@ server <- function(input, output, session) {
     for (r in 1:nrow(global_coords)) {
         handleNewCoords(global_coords$Long[r], global_coords$Lat[r])
     }
-    
   })
   
+  # ====== Observes download button ======
+  output$download <- downloadHandler(
+    filename = "overpassR.csv",
+    content = function(file) {
+      write.csv(global_table, file, row.names = TRUE)
+    }
+  )
   
   
+  # ============ Server Helper Functions ============
   
-  # === SENTINEL2 ===
-  ## Given coordinates from an observed click, retroactive update, or manual 'find", this updates map and global table output
   
+  # ====== SENTINEL2 ======
+  ## Given coordinates, display the footprints of MGRS tiles and update the output table
   generateS2 <- function(lon, lat) {
     start <- input$dates[1] %>% as.Date()
     stop <- input$dates[2] %>% as.Date()
@@ -463,9 +460,9 @@ server <- function(input, output, session) {
     
     
     # Find the whole number of days between the swath's reference datetime and the start of the user's selected range (date).
-    daterange_offset <-
-      (difftime(swaths$begin, start) %>% as.integer() %% 5) %>% ddays()
+    daterange_offset <- (difftime(swaths$begin, start) %>% as.integer() %% 5) %>% ddays()
     dates <-  start + daterange_offset
+    datetimes <- data.frame()
     times <-
       strftime(
         swaths$begin,
@@ -473,7 +470,7 @@ server <- function(input, output, session) {
         tz = input$timezone,
         usetz = TRUE
       ) %>% as.character.Date()
-    datetimes <- data.frame()
+    
     
     #Positive date range, but too narrow
     if (any(dates > stop)) {
@@ -487,6 +484,7 @@ server <- function(input, output, session) {
       x <- data.frame("Date" = x[x <= stop]) %>% as.character.Date()
       datetimes <- rbind(datetimes, merge(x, times[i]))
     }
+    
     names(datetimes) <-  c("Date", "Time")
     
     output <- datetimes %>% as.character.Date() %>% merge(mgrs$Name)
@@ -503,8 +501,8 @@ server <- function(input, output, session) {
   }
   
   
-  # === LANDSAT 7 & 8 ===
-  ## Given coordinates and reference to a local lookup table (specifying ls7 or ls8), update map and table output
+  # ====== LANDSAT 7 & 8 ======
+  ## Given coordinates and either LS8 or LS7 lookup table, update map with overlapping WRS tiles and output table
   generate <- function(lon, lat, ref) {
     df <- returnPR(lon, lat)
     start <- input$dates[1] %>% as.numeric()
@@ -525,13 +523,12 @@ server <- function(input, output, session) {
     
     #Create range of dates from start - end
     range <- start:stop %>% as.Date('1970-01-01') %>% as.character()
-    start_date_cycle <-
-      start - (ref$Cycle_Start[1] %>% as.Date() %>% as.numeric()) %% 16 + 1
     
-    #Lookup table where every date in rnge has corresponding cycle
-    table <-
-      cbind("Date" = range,
-            "Cycle" = getCycles(1, 16, length(range), start_date_cycle - 1)) %>% as.data.frame()
+    # What cycle, 1-16, is the first day in the date range
+    start_date_cycle <- start - (ref$Cycle_Start[1] %>% as.Date() %>% as.numeric()) %% 16 + 1
+    
+    #Lookup table where every date in range has corresponding cycle
+    table <- cbind("Date" = range, "Cycle" = getCycles(1, 16, length(range), start_date_cycle - 1)) %>% as.data.frame()
     
     if (ref$Satellite[[1]] == "Landsat8") {
       times <- df$L8_Time
@@ -545,23 +542,17 @@ server <- function(input, output, session) {
       cycle <- ref[ref$Path == df$PATH[r],]$Cycle
       dates <- table[table$Cycle == cycle,]$Date %>% as.character()
       
-      if (is_empty(dates))
+      if (is_empty(dates)) {
         next
-      
-      if (!is.na(times[r])) {
-        time <-
-          paste0(Sys.Date(), times[r]) %>% as.POSIXct() %>% strftime(format = "%H:%M:%S",
-                                                                     tz = input$timezone,
-                                                                     usetz = TRUE) %>% as.character.Date()
-        
+      } else if (!is.na(times[r])) {
+        time <- paste0(Sys.Date(), times[r]) %>% as.POSIXct() %>% 
+                  strftime(format = "%H:%M:%S", tz = input$timezone, usetz = TRUE) %>% as.character.Date()
       } else {
         time <- NA
       }
       
-      
       updating_table <-
-        rbind(
-          updating_table,
+        rbind(updating_table,
           cbind(
             "Date" = dates,
             "Time" = df$L7_Time[r],
@@ -578,7 +569,7 @@ server <- function(input, output, session) {
   }
   
   
-  # Calls appropriate generate functions with a given coordinate depending on satellite selection
+  # ====== Calls appropriate generate functions with a given coordinate depending on satellite selection ======
   handleNewCoords <- function(lon, lat) {
     if (any(input$satellite == "s2")) {
       generateS2(lon, lat)
@@ -594,7 +585,7 @@ server <- function(input, output, session) {
   }
   
   
-  # Updates map with user's latest click
+  # ====== Updates map with user's latest click ======
   map <- function(lon, lat) {
     return(
       leafletProxy("map") %>%
@@ -616,15 +607,13 @@ server <- function(input, output, session) {
   }
   
   
-  # Processes a data frame to be added to the output table
+  # ====== Processes a data frame to be added to the output table ======
   update_output <- function(append) {
     if (is_empty(append)) {
       output$helpText <- renderText("No overpass in selected date range")
       return()
     } else {
-      output$helpText <- renderText({
-        
-      })
+      output$helpText <- renderText({})
     }
     
     #Renders distinct output
@@ -635,11 +624,11 @@ server <- function(input, output, session) {
     } else {
       global_table <<- append %>% as.data.frame()
     }
-    
     display_global()
   }
   
-  # Displays the global variable containing the output table
+  
+  # ====== Displays the global output table ======
   display_global <- function() {
     output$table <<- renderDT(datatable(
       global_table,
@@ -655,16 +644,8 @@ server <- function(input, output, session) {
       formatRound(c(6:7), 2))
   }
   
-  # Observes download button
-  output$download <- downloadHandler(
-    filename = "overpassR.csv",
-    content = function(file) {
-      write.csv(global_table, file, row.names = TRUE)
-    }
-  )
   
-  
-  # Returns whether dates are a valid range. Handles error message
+  # ====== Returns whether dates are a valid range. Handles error message ======
   validDates <- function() {
     if (input$dates[1] >= input$dates[2]) {
       output$helpText <- renderText("Please select a positive date range")
@@ -677,7 +658,8 @@ server <- function(input, output, session) {
     }
   }
   
-  # === WEB SCRAPER ===
+  
+  # ====== WEB SCRAPER ======
   # This function goes to ESA's website containing Sentinel Acquisition Plans, downloads the kml, and replaces the old one locally
   # Required conditions: existing local acquisition plan's latest referenced date in $begin attribute is at least 11 prior to today
   # Error handling: If error or warning is raised, the local plan will not be replaced and an error message is displayed, prompting
@@ -735,10 +717,9 @@ server <- function(input, output, session) {
 }
 
 
-#Helper methods---------------------------------------------------------------------------------------------------
+# ============ Generic helpers ============
 
-
-#Helper method takes lon, lat, shapefile, and returns PR of intersected tiles
+# ====== Takes lon, lat, shapefile, and returns PR of intersected tiles ======
 returnPR <- function(lon, lat) {
   coords <- as.data.frame(cbind(lon, lat))
   point <- SpatialPoints(coords)
@@ -753,6 +734,7 @@ returnPR <- function(lon, lat) {
   
 }
 
+# ====== Validates coordinate clicks ======
 validCoords <- function(lon, lat) {
   if (is.null(lon) | is.null(lat)
       | is.na(lon) | is.na(lat))
@@ -763,13 +745,10 @@ validCoords <- function(lon, lat) {
   
 }
 
-
-
+# ====== Genrates sequence of Landsat overpass cycles ======
 getCycles <- function(from, to, len, offset = 0) {
   cycles <- rep(1:16, length.out = (len + offset))
   return(cycles[(1 + offset):length(cycles)])
 }
-
-
 
 shinyApp(ui, server)
