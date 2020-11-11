@@ -1,9 +1,9 @@
+library(rgdal) ##On my computer I need to load rgdal before sf for the libKML driver
 library(shiny)
 library(leaflet)
 library(sf)
 library(tidyverse)
 library(sp)
-library(rgdal)
 library(lubridate)
 library(DT)
 library(plyr)
@@ -27,7 +27,8 @@ choices <- c("ls7", "ls8", "s2")
 
 #Acquisition swath and mgrs tiles for Sentinel2
 MGRS <- st_read('Data/In/Sentinel/Relevant_MGRS.shp')
-SWATHS <- st_read('Data/In/Sentinel/Swaths.kml', layer = "NOMINAL")
+## Similarly, I need to read in with gdal rather than SF to get libkml to work right
+SWATHS <- readOGR('Data/In/Sentinel/Swaths.kml', layer = "NOMINAL") %>% st_as_sf()
 
 global_table = data.frame()
 global_coords = data.frame()
@@ -35,13 +36,14 @@ global_coords = data.frame()
 # Ensures landing page is displayed
 LAUNCHING <-  TRUE
 
-
+## Changing height to 1000px got rid of the whitespace in the landing page for me.
+## Not positive it's the best fix, but it's the only one I can think of.
 ui <- fluidPage(
   tags$head(tags$style(
     HTML(
       '.modal.in .modal-dialog{
         width:100%;
-        height:100%;
+        height:1000px;
         margin:0px;
       }
 
@@ -161,11 +163,11 @@ ui <- fluidPage(
     tags$table(
       id = "leaflet-table",
       style = "width: 100%",
-      actionButton(inputId = "help_button", "", icon = icon("question-circle")),
+      actionButton(inputId = "help_button", "Info", icon = icon("question-circle")),
       tags$tr(
         tags$td(style = "width: 8%"),
         tags$td(style = "width: 84%",
-                leafletOutput('map', height = 550)),
+                leafletOutput('map', height = 550)), #Should height be relative (%) here since everything else is?
         tags$td(style = "width: 8%")
       )
     )
@@ -231,7 +233,7 @@ server <- function(input, output, session) {
             p("Project Guidance: Simon Topp (sntopp@live.unc.edu), John Gardner (johngardner87@gmail.com), and Tamlin Pavelsky.")
           ),
           tags$b(
-            tags$a(href = "http://uncglobalhydrology.org/", "Global Hydrology Lab")
+            tags$a(href = "http://uncglobalhydrology.org/", "Overpasser is a project of the Global Hydrology Lab")
           )
         ),
         tags$hr(),
@@ -240,19 +242,20 @@ server <- function(input, output, session) {
           tags$ol(
             tags$li("Landsat: "),
             tags$i(
-              tags$a(href = "https://github.com/yhhjo/OverpassR/blob/feature-ls-times/Data/In/Landsat/wrs2_cleaned_datetime.shp", "WRS shapefile & acquisition times"),
+              tags$a(href = "https://github.com/yhhjo/OverpassR/blob/feature-ls-times/Data/In/Landsat/wrs2_cleaned_datetime.shp", "WRS shapefile & acquisition times*"),
               br(),
               tags$a(href = "https://landsat.usgs.gov/landsat_acq", "Acquisiton dates")
             ),
             tags$li("Sentinel: "),
             tags$i(
-              tags$a(href = "https://hls.gsfc.nasa.gov/wp-content/uploads/2016/03/S2A_OPER_GIP_TILPAR_MPC__20151209T095117_V20150622T000000_21000101T000000_B00.kml", "MGRS tiles"),
+              tags$a(href = "https://hls.gsfc.nasa.gov/wp-content/uploads/2016/03/S2A_OPER_GIP_TILPAR_MPC__20151209T095117_V20150622T000000_21000101T000000_B00.kml", "MGRS tiles**"),
               br(),
               tags$a(href = "https://github.com/yhhjo/OverpassR/blob/feature-ls-times/Data/In/Sentinel/Swaths.kml", 
                      paste0("Datetime acquisition swath .kml for ", 
                              SWATHS$begin %>% as.Date() %>% min() %>% as.character(),  " to ", 
-                             SWATHS$begin %>% as.Date() %>% max() %>% as.character())
+                             SWATHS$begin %>% as.Date() %>% max() %>% as.character(), "*")
                      ),
+              tags$p('* Times are accurate to +/- 1 hour, **Note not all Sentinel 2 images cover the entire MGRS tile')
             )
           )
         )
@@ -411,7 +414,7 @@ server <- function(input, output, session) {
   
   # ====== Observes download button ======
   output$download <- downloadHandler(
-    filename = "overpassR.csv",
+    filename = "SelectedOverpasses.csv",
     content = function(file) {
       write.csv(global_table, file, row.names = TRUE)
     }
@@ -427,8 +430,7 @@ server <- function(input, output, session) {
     start <- input$dates[1] %>% as.Date()
     stop <- input$dates[2] %>% as.Date()
     click <-
-      cbind(lon, lat) %>% as.data.frame() %>% SpatialPoints() %>% st_as_sf(coords = c('lon', 'lat'))
-    st_crs(click) = 4326
+      cbind(lon, lat) %>% as.data.frame() %>% st_as_sf(coords = c('lon', 'lat'), crs = 4326)
     
     #Swaths and mgrs that contain click
     swaths <- SWATHS[st_intersects(click, SWATHS, sparse = FALSE),]
