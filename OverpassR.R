@@ -3,7 +3,6 @@ library(shiny)
 library(leaflet)
 library(sf)
 library(tidyverse)
-library(RColorBrewer)
 library(sp)
 library(rgdal)
 library(lubridate)
@@ -14,15 +13,15 @@ library(xml2)
 library(rvest)
 
 
-#Read the wrs tiles
-wrs <-
-  st_read('Data/In/Landsat/wrs2_cleaned_datetime.shp') %>% filter(MODE == 'D')
 
-#Lookup tables for Landsat 7 and 8
-ls8 <-
-  read.csv('Data/In/Landsat/landsat8_lookup.csv') %>% cbind("Satellite" = "Landsat8")
-ls7 <-
-  read.csv('Data/In/Landsat/landsat7_lookup.csv') %>% cbind("Satellite" = "Landsat7")
+#  ============================ GLOBAL VARIABLES =======================================
+
+#Read the wrs tiles
+wrs <- st_read('Data/In/Landsat/wrs2_cleaned_datetime.shp') %>% filter(MODE == 'D')
+
+# Lookup tables for Landsat 7 and 8 dates
+ls8 <- read.csv('Data/In/Landsat/landsat8_lookup.csv') %>% cbind("Satellite" = "Landsat8")
+ls7 <- read.csv('Data/In/Landsat/landsat7_lookup.csv') %>% cbind("Satellite" = "Landsat7")
 
 #Used to select a table when toggling between satellites
 lookup_table <- list("Landsat8" = ls8, "Landsat7" = ls7)
@@ -32,19 +31,17 @@ choices <- c("ls7", "ls8", "s2")
 MGRS <- st_read('Data/In/Sentinel/Relevant_MGRS.shp')
 SWATHS <- st_read('Data/In/Sentinel/Swaths.kml', layer = "NOMINAL")
 
-#Global variables. It will update with each map click and reset only when 'reset map' button is clicked
 global_table = data.frame()
 global_coords = data.frame()
 
-#Used to display modal landing page only once
+# Ensures landing page is displayed
 LAUNCHING <-  TRUE
 
 
 ui <- fluidPage(
   tags$head(tags$style(
     HTML(
-      '
-      .modal.in .modal-dialog{
+      '.modal.in .modal-dialog{
         width:100%;
         height:100%;
         margin:0px;
@@ -53,8 +50,7 @@ ui <- fluidPage(
       .modal-content{
         width:100%;
         height:100%;
-      }
-    '
+      }'
     )
   )),
   titlePanel(tags$table(
@@ -162,6 +158,7 @@ ui <- fluidPage(
     )
   ),
   
+  # Map and help button
   wellPanel(
     tags$table(
       id = "leaflet-table",
@@ -176,6 +173,7 @@ ui <- fluidPage(
     )
   ),
   
+  # Download, refresh, and output table
   tags$table(tags$tr(
     tags$td(style = "width: 75%"),
     tags$td(style = "width: 5%",
@@ -189,12 +187,14 @@ ui <- fluidPage(
 )
 
 
+#  ========================================== SERVER  ===============================================
 
 server <- function(input, output, session) {
   proxy_table = dataTableProxy('table')
   proxyMap <- leafletProxy("map")
   
   
+  # ====== Help dialogue / landing page ======
   
   observe({
     if (!is.null(input$help_button) || LAUNCHING) {
@@ -202,7 +202,6 @@ server <- function(input, output, session) {
       relativ_date <-
         SWATHS$begin %>% as.Date() %>% max() %>% as.character()
       
-      # event will be called when histdata changes, which only happens once, when it is initially calculated
       showModal(modalDialog(
         footer = modalButton("Go"),
         h1('Welcome to Overpasser! (beta)'),
@@ -212,8 +211,7 @@ server <- function(input, output, session) {
             "Overpasser was designed for integrating satellite remote sensing and field data collection. It is an interactive tool that
                            visualizes the location and footprint of satellite overpasses (or tiles, such as Landsat 7, 8, and Sentinel 2A/B) as well
                           as date/times. OverpassR can help researchers plan field campaigns during satellite overpasses as well as to simply visualize
-                          the spatial and temporal coverage of satellite images over study areas."
-          ),
+                          the spatial and temporal coverage of satellite images over study areas."),
           tags$br(),
           tags$blockquote(
             tags$b("Directions:"),
@@ -221,23 +219,19 @@ server <- function(input, output, session) {
               tags$li("Select your preferred satellites."),
               tags$li(
                 "Click on the map (in as many locations as desired) or manually enter coordinates to see overpass locations on map and a table of dates.
-              (The table can be interactively sorted by different columns by clicking the header)."
-              ),
+              (The table can be interactively sorted by different columns by clicking the header)."),
               tags$li(
-                "Click the “Download” button at the bottom to generate a .csv file of the table of overpass dates."
-              ),
+                "Click the “Download” button at the bottom to generate a .csv file of the table of overpass dates."),
+              
               tags$li("Hit “Reset” to clear selections and start over.")
             )
           ),
           tags$i(
             tags$p(
               "Please send bug reports to the Lead Developer, Andrew Buchanan at the email address below.
-                          Contact Simon Topp and John Gardner with feedback on current or desired future functionality."
-            ),
+                          Contact Simon Topp and John Gardner with feedback on current or desired future functionality."),
             p("Lead Developer: Andrew Buchanan (ajb28@live.unc.edu)."),
-            p(
-              "Project Guidance: Simon Topp (sntopp@live.unc.edu), John Gardner (johngardner87@gmail.com), and Tamlin Pavelsky."
-            )
+            p("Project Guidance: Simon Topp (sntopp@live.unc.edu), John Gardner (johngardner87@gmail.com), and Tamlin Pavelsky.")
           ),
           tags$b(
             tags$a(href = "http://uncglobalhydrology.org/", "Global Hydrology Lab")
@@ -270,7 +264,9 @@ server <- function(input, output, session) {
     }
   })
   
-  #Render map with base layers WorldImagery and Labels
+  
+  # ====== Render map with WorldImagery and Labels as base ======
+  
   output$map <- renderLeaflet({
     leaflet(options = leafletOptions(minZoom = .75)) %>%
       setMaxBounds(
@@ -302,6 +298,8 @@ server <- function(input, output, session) {
   })
   
   
+  # ====== Handle timezone changes ======
+  
   observeEvent(input$timezone, {
     if (is_empty(global_coords)) {
       return()
@@ -318,10 +316,11 @@ server <- function(input, output, session) {
                    usetz = TRUE) %>% as.character.Date()
       }
     }
-    
     display_global()
   })
   
+  
+  # ====== Manually entered coordinate search ======
   
   observeEvent(input$find, {
     lon <- input$lon %>% as.numeric()
@@ -343,36 +342,34 @@ server <- function(input, output, session) {
   })
   
   
-  #For switching between satellites once clicks have been made
+  # ======  Retroactive satellite changes ====== 
   observeEvent(input$satellite, {
     
-    #Ignore if this is NOT a retroactive click
-    if (is_empty(global_coords))
+    #Ignore if this is't retroactive
+    if (is_empty(global_coords)) {
       return()
-    
-    ##Clear DT and global table to be re-populated
+    } 
     global_table <<- data.frame()
-    
     leafletProxy("map") %>% clearShapes()
     
-    #More efficient way of coding the following?
+    # Repopulate cleared data table and map
     for (r in 1:nrow(global_coords)) {
       handleNewCoords(global_coords$Long[r], global_coords$Lat[r])
     }
   })
   
   
-  
+  # ====== Handle user map clicks ======
   observeEvent(input$map_click, {
-    if (is.null(input$map_click))
+    if (is.null(input$map_click)) {
       return()
-    
+    }
+
     click <- input$map_click
     lon <- click$lng
     lat <- click$lat
     
-    global_coords <<-
-      rbind(global_coords, cbind("Long" = lon, "Lat" = lat)) %>% distinct()
+    global_coords <<- rbind(global_coords, cbind("Long" = lon, "Lat" = lat)) %>% distinct()
     
     handleNewCoords(lon, lat)
   })
@@ -380,8 +377,6 @@ server <- function(input, output, session) {
   
   #Use a separate observer to clear shapes and output table if "clear tiles" button clicked
   observeEvent(input$refreshButton, {
-    if (is.null(input$refreshButton))
-      return()
     
     proxyMap %>% clearShapes() %>% clearMarkers()
     output$helpText <- renderText({
