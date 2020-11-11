@@ -2,5 +2,7 @@
 .Rhistory
 .RData
 .Ruserdata
+.gitignore
 Helpers
 rsconnect
+OverpassR.Rproj
