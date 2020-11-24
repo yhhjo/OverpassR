@@ -1,0 +1,13 @@
+name: OverpassR
+title: OverpassR
+username:
+account: yhhjo
+server: shinyapps.io
+hostUrl: https://api.shinyapps.io/v1
+appId: 2167301
+bundleId: 3696351
+url: https://yhhjo.shinyapps.io/OverpassR/
+when: 1601664478.08295
+asMultiple: FALSE
+asStatic: FALSE
+ignoredFiles: .RData|Parse_KML.ipynb|Playground.R|Sandbox.R

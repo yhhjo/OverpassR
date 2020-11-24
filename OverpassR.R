@@ -1,4 +1,4 @@
-library(rgdal) ##On my computer I need to load rgdal before sf for the libKML driver
+library(rgdal) 
 library(shiny)
 library(leaflet)
 library(sf)
@@ -8,7 +8,6 @@ library(lubridate)
 library(DT)
 library(plyr)
 library(dplyr)
-
 library(xml2)
 library(rvest)
 
@@ -17,8 +16,6 @@ library(rvest)
 #  ============================ GLOBAL VARIABLES =======================================
 
 wrs <- st_read('Data/In/Landsat/wrs2_cleaned_datetime.shp') %>% filter(MODE == 'D')
-
-
 
 # Lookup tables for Landsat 7 and 8 dates
 ls8 <- read.csv('Data/In/Landsat/landsat8_lookup.csv') %>% cbind("Satellite" = "Landsat8")
@@ -30,7 +27,6 @@ choices <- c("ls7", "ls8", "s2")
 
 #Acquisition swath and mgrs tiles for Sentinel2
 MGRS <- st_read('Data/In/Sentinel/Relevant_MGRS.shp')
-## Similarly, I need to read in with gdal rather than SF to get libkml to work right
 SWATHS <- readOGR('Data/In/Sentinel/Swaths.kml', layer = "NOMINAL") %>% st_as_sf()
 
 global_table = data.frame()
@@ -39,8 +35,6 @@ global_coords = data.frame()
 # Ensures landing page is displayed
 LAUNCHING <-  TRUE
 
-## Changing height to 1000px got rid of the whitespace in the landing page for me.
-## Not positive it's the best fix, but it's the only one I can think of.
 ui <- fluidPage(
 
   tags$head(tags$style(
@@ -182,8 +176,7 @@ ui <- fluidPage(
       tags$tr(
         tags$td(style = "width: 8%"),
         tags$td(style = "width: 84%",
-                leafletOutput('map', height = 550)), #Should height be relative (%) here since everything else is?
-        tags$td(style = "width: 8%")
+                leafletOutput('map', height = 550)), tags$td(style = "width: 8%")
       )
     )
   ),

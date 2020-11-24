@@ -1,0 +1,90 @@
+---
+title: "Landsat_Aquisition_Times"
+author: "Simon Topp"
+date: "10/9/2020"
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+library(RCurl)
+library(tidyverse)
+library(lubridate)
+library(sf)
+
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+## Download a full cycle of landsat overpasses
+```{r}
+dates <- seq(ymd(Sys.Date()) - 16, ymd(Sys.Date()), 'days')
+
+timePull <- function(date, sat){
+  month <- month(date, label = T)
+  year <- year(date)
+  date <- format(date, format = "%b-%d-%Y")
+  
+  url <- paste0('https://landsat.usgs.gov/landsat/all_in_one_pending_acquisition/',sat,'/Pend_Acq/y',year,'/',month,'/',date,'.txt')
+  
+read_fwf(url, fwf_widths(c(5,5,20,NA)), col_types = c('ii??')) %>%
+  filter(!is.na(X1)) %>%
+  select(Path = X1, Row = X2, Img.Start = X3) %>%
+  mutate(time.parsed = parse_date_time(Img.Start,'j-HMS'))
+}
+
+```
+
+## Acquire reference times for each path/row
+```{r}
+wrs <- st_read('Data/In/Landsat/wrs2_cleaned_datetime.shp')
+wrs <- wrs[wrs$MODE == 'D',]
+
+times <- data.frame("PATH" = wrs$PATH, "ROW" = wrs$ROW)
+
+
+mergeTime <- function(into, sat, MAXCOUNT) {
+  
+  into <- cbind(into, data.frame("Time" = NA))
+
+  for (i in 0:MAXCOUNT-1) {
+    ref <- timePull(Sys.Date() - i, sat)
+    ref$time.parsed <-
+      ref$time.parsed %>% strftime(format = "%H:%M:%S",
+                                   tz = "GMT",
+                                   usetz = TRUE)
+    
+    names(ref)[names(ref) == "time.parsed"] <- "Time"
+    
+    into <-
+      left_join(into, ref, by = c('PATH' = 'Path', 'ROW' = 'Row')) %>%
+      mutate(Time = coalesce(Time.x, Time.y)) %>% select(-Time.x,-Time.y,-Img.Start)
+    
+    if (!anyNA(into$Time)) {
+      break
+    }
+  }
+  
+  colname <- paste0(sat, "_Time")
+  
+  #Rename the column of acquisition times "L8_Times" or "L7_Times" and add column "Times" to be NA so function can be repeated
+  names(into)[names(into) == "Time"] <- colname
+  return(into)
+
+}
+
+times <- mergeTime(times, "L8", 80)
+times <- mergeTime(times, "L7", 80)
+
+joined <- left_join(wrs, times)
+joined <- joined %>% unique()
+
+st_write(joined, "Data/In/wrs2_cleaned_datetime.shp")
+```
+
+
+## Look at times spatially and see if they make sense
+```{r}
+mapview::mapview(wrs)
+```
