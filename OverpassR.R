@@ -49,11 +49,11 @@ ui <- fluidPage(
         width:100%;
         height:100%;
       }'
-
+    )),
   
   fixedRow(
     column(4, offset = 5,
-           titlePanel("OverpassR")) #,
+           titlePanel("OverpassR"))
   ),
   
   fixedRow(
@@ -263,7 +263,7 @@ server <- function(input, output, session) {
                              SWATHS$begin %>% as.Date() %>% min() %>% as.character(),  " to ", 
                              SWATHS$begin %>% as.Date() %>% max() %>% as.character(), "*")
                      ),
-              tags$p('* Times are accurate to +/- 1 hour, **Note not all Sentinel 2 images cover the entire MGRS tile')
+              tags$p('* Times are accurate to +/- 30 minutes, **Note not all Sentinel 2 images cover the entire MGRS tile')
             )
           )
         )
