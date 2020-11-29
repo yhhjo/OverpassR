@@ -3,3 +3,5 @@
 .RData
 .Ruserdata
 Helpers/
+rsconnect/
+OverpassR.Rproj
