@@ -26,7 +26,7 @@ choices <- c("ls7", "ls8", "s2")
 
 #Acquisition swath and mgrs tiles for Sentinel2
 MGRS <- st_read('Data/In/Sentinel/Relevant_MGRS.shp')
-SWATHS <- readOGR('Data/In/Sentinel/Swaths.kml', layer = "NOMINAL") %>% st_as_sf()
+SWATHS <- st_read('Data/In/Sentinel/Swaths.kml', layer = "NOMINAL") %>% st_as_sf()
 
 global_table = data.frame()
 global_coords = data.frame()
@@ -48,19 +48,8 @@ ui <- fluidPage(
         width:100%;
         height:100%;
       }'
-    )),
+    ))),
   
-  fixedRow(
-    column(4, offset = 5,
-           titlePanel("OverpassR"))
-  ),
-  
-  fixedRow(
-    column(10, offset = 3, 
-           mainPanel("Click on map or enter coordinates to view satellite overpass information")
-
-    )
-  )),
   titlePanel(tags$table(
     id = "title-panel",
     tags$tr(
@@ -210,7 +199,7 @@ server <- function(input, output, session) {
       
       showModal(modalDialog(
         footer = modalButton("Go"),
-        h1('Welcome to Overpasser! (beta)'),
+        h1('Welcome to Overpasser!'), 
         tags$p(
           tags$br(),
           tags$blockquote(
@@ -703,7 +692,7 @@ server <- function(input, output, session) {
         
         # Update local data
         SWATHS <<-
-          st_read("Data/In/Sentinel/Swaths.kml", layer = "NOMINAL")
+          st_read('Data/In/Sentinel/Swaths.kml', layer = "NOMINAL") %>% st_as_sf()
       },
       
       # === WARNING HANDLING ===
