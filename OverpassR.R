@@ -205,7 +205,7 @@ server <- function(input, output, session) {
           tags$blockquote(
             "Overpasser was designed for integrating satellite remote sensing and field data collection. It is an interactive tool that
                            visualizes the location and footprint of satellite overpasses (or tiles, such as Landsat 7, 8, and Sentinel 2A/B) as well
-                          as date/times. OverpassR can help researchers plan field campaigns during satellite overpasses as well as to simply visualize
+                          as date/times. Overpasser can help researchers plan field campaigns during satellite overpasses as well as to simply visualize
                           the spatial and temporal coverage of satellite images over study areas."),
           tags$br(),
           tags$blockquote(
