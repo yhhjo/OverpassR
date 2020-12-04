@@ -28,8 +28,6 @@ choices <- c("ls7", "ls8", "s2")
 MGRS <- st_read('Data/In/Sentinel/Relevant_MGRS.shp')
 SWATHS <- st_read('Data/In/Sentinel/Swaths.kml', layer = "NOMINAL") %>% st_as_sf()
 
-global_table = data.frame()
-global_coords = data.frame()
 
 # Ensures landing page is displayed
 LAUNCHING <-  TRUE
@@ -186,6 +184,8 @@ ui <- fluidPage(
 #  ========================================== SERVER  ===============================================
 
 server <- function(input, output, session) {
+  global_table = data.frame()
+  global_coords = data.frame()
   proxy_table = dataTableProxy('table')
   proxyMap <- leafletProxy("map")
   
